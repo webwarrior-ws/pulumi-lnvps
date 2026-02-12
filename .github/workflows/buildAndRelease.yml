@@ -1,0 +1,66 @@
+name: Build and release
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+    
+env:
+  PULUMI_VERSION: 3.201.0
+
+jobs:
+  bulidAndRelease:
+    name: Build
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+        fetch-tags: true
+    - name: Setup Pulumi CLI
+      uses: pulumi/actions@v6.2.0
+      with:
+        pulumi-version: ${{ env.PULUMI_VERSION }}        
+    - name: Build
+      run: |
+        # version.txt is deleted when running pulumi package gen-sdk, so back it up
+        cp sdk/dotnet/version.txt version.txt.bak
+        dotnet build
+        pulumi package gen-sdk --language dotnet .
+        # restore version.txt
+        mv version.txt.bak sdk/dotnet/version.txt
+        cd sdk/dotnet
+        dotnet build
+    - name: Create archive
+      run: zip --recurse-paths pulumi-lnvps.zip ./* --exclude .git .github .gitignore
+    - name: Check that tag is the same as contents of version.txt
+      if: github.ref_type == 'tag'
+      run: |
+        version=$(cat sdk/dotnet/version.txt)
+        if [ "$version" != "${{ github.ref_name }}" ]; then
+          echo "Version in version.txt ($version) is not the same as tag (${{ github.ref_name }}). Aborting."
+          exit 1
+        fi
+    - name: Create Release
+      id: create_release
+      if: github.ref_type == 'tag'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: ${{ github.ref }}
+        draft: false
+        prerelease: false
+    - name: Upload Release
+      if: github.ref_type == 'tag'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+        asset_path: ./pulumi-lnvps.zip
+        asset_name: pulumi-lnvps.zip
+        asset_content_type: application/zip
