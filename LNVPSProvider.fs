@@ -21,6 +21,7 @@ open Nostr.Client.Keys
 type LNVPSProvider(nostrPrivateKey: string) =
     inherit Pulumi.Experimental.Provider.Provider()
 
+    static let sshKeyResourceName = "lnvps:index:SshKey"
     static let apiBaseUrl = "https://api.lnvps.net"
 
     let httpClient = new HttpClient()
@@ -44,7 +45,7 @@ type LNVPSProvider(nostrPrivateKey: string) =
         override self.Dispose (): unit = 
             httpClient.Dispose()
 
-    member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, content: Json.JsonContent) =
+    member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, ?content: Json.JsonContent) =
         async {
             let absoluteUrl = apiBaseUrl + relativeUrl
             let event = NostrEvent(
@@ -60,12 +61,65 @@ type LNVPSProvider(nostrPrivateKey: string) =
             let base64EncodedEvent = Convert.ToBase64String(Text.Encoding.UTF8.GetBytes serializedEvent)
             httpClient.DefaultRequestHeaders.Authorization <- Headers.AuthenticationHeaderValue("Nostr", base64EncodedEvent)
 
-            use message = new HttpRequestMessage(method, absoluteUrl, Content=content)
-            return! httpClient.SendAsync message |> Async.AwaitTask
+            use message = new HttpRequestMessage(method, absoluteUrl)
+            match content with
+            | Some jsonContent -> message.Content <- jsonContent
+            | None -> ()
+
+            let! response = httpClient.SendAsync message |> Async.AwaitTask
+            if response.IsSuccessStatusCode then
+                return response
+            else
+                let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+                let contentString =
+                    match content with
+                    | Some jsonContent -> $"(content = {jsonContent.Value})"
+                    | None -> String.Empty
+                return failwith $"""Request {method} {relativeUrl} {contentString} failed with code {response.StatusCode}.
+Response: {responseBody}"""
         }
     
     override self.GetSchema (request: GetSchemaRequest, ct: CancellationToken): Task<GetSchemaResponse> =
-        raise <| NotImplementedException()
+        let sshKeyProperties = 
+            """{
+                                "name": {
+                                    "type": "string",
+                                    "description": "Name of the SSH key."
+                                }
+            }"""
+
+        let sshKeyInputProperties = 
+            """{
+                                "name": {
+                                    "type": "string",
+                                    "description": "Name of the SSH key."
+                                },
+                                "key_data": {
+                                    "type": "string",
+                                    "description": "SSH key itself."
+                                }
+            }"""
+
+        let schema =
+            sprintf
+                """{
+                    "name": "lnvps",
+                    "version": "%s",
+                    "resources": {
+                        "%s" : {
+                            "properties": %s,
+                            "inputProperties": %s
+                        }
+                    },
+                    "provider": {
+                    }
+                }"""
+                LNVPSProvider.Version
+                sshKeyResourceName
+                sshKeyProperties
+                sshKeyInputProperties
+        
+        Task.FromResult <| GetSchemaResponse(Schema = schema)
 
     override self.CheckConfig (request: CheckRequest, ct: CancellationToken): Task<CheckResponse> = 
         Task.FromResult <| CheckResponse(Inputs = request.NewInputs)
@@ -79,14 +133,30 @@ type LNVPSProvider(nostrPrivateKey: string) =
         Task.FromResult <| ConfigureResponse()
 
     override self.Check (request: CheckRequest, ct: CancellationToken): Task<CheckResponse> = 
-        raise <| NotImplementedException()
+        if request.Type = sshKeyResourceName then
+            Task.FromResult <| CheckResponse(Inputs = request.NewInputs)
+        else
+            failwith $"Unknown resource type '{request.Type}'"
 
     override self.Diff (request: DiffRequest, ct: CancellationToken): Task<DiffResponse> = 
-        raise <| NotImplementedException()
+        if request.Type = sshKeyResourceName then
+            let diff = request.NewInputs.Except request.OldInputs 
+            let replaces = diff |> Seq.map (fun pair -> pair.Key) |> Seq.toArray
+            Task.FromResult <| DiffResponse(Changes = (replaces.Length > 0), Replaces = replaces)
+        else
+            failwith $"Unknown resource type '{request.Type}'"
 
     member private self.AsyncCreate(request: CreateRequest): Async<CreateResponse> =
         async {
-            return raise <| NotImplementedException()
+            if request.Type = sshKeyResourceName then
+                let createSshKey = {| name = request.Properties.["name"]; key_data = request.Properties.["key_data"] |}
+                let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Post, Json.JsonContent.Create createSshKey)
+                let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+                let json = JsonDocument.Parse(responseBody).RootElement
+                let id = json.GetProperty("id").GetUInt64().ToString()
+                return CreateResponse(Id = id, Properties = request.Properties)
+            else
+                return failwith $"Unknown resource type '{request.Type}'"
         }
 
     override self.Create (request: CreateRequest, ct: CancellationToken): Task<CreateResponse> = 
@@ -94,7 +164,10 @@ type LNVPSProvider(nostrPrivateKey: string) =
 
     member private self.AsyncUpdate(request: UpdateRequest): Async<UpdateResponse> =
         async {
-            return raise <| NotImplementedException()
+            if request.Type = sshKeyResourceName then
+                return failwith $"Resource {sshKeyResourceName} does not support updating."
+            else
+                return failwith $"Unknown resource type '{request.Type}'"
         }
 
     override self.Update (request: UpdateRequest, ct: CancellationToken): Task<UpdateResponse> = 
@@ -102,7 +175,10 @@ type LNVPSProvider(nostrPrivateKey: string) =
     
     member private self.AsyncDelete(request: DeleteRequest): Async<unit> =
         async {
-            return raise <| NotImplementedException()
+            if request.Type = sshKeyResourceName then
+                return failwith $"Resource {sshKeyResourceName} does not support deletion."
+            else
+                return failwith $"Unknown resource type '{request.Type}'"
         }
 
     override self.Delete (request: DeleteRequest, ct: CancellationToken): Task = 
@@ -110,7 +186,21 @@ type LNVPSProvider(nostrPrivateKey: string) =
 
     member private self.AsyncRead (request: ReadRequest) : Async<ReadResponse> =
         async {
-            return raise <| NotImplementedException()
+            if request.Type = sshKeyResourceName then
+                let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Get)
+                let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+                let json = JsonDocument.Parse(responseBody).RootElement
+                let maybeUserSshKeyObject = 
+                    json.EnumerateArray()
+                    |> Seq.tryFind (fun object -> object.GetProperty("id").GetUInt64().ToString() = request.Id)
+                match maybeUserSshKeyObject with
+                | Some userSshKeyObject ->
+                    let properties = dict [ "name", PropertyValue(userSshKeyObject.GetProperty("name").GetString()) ]
+                    return ReadResponse(Id = request.Id, Properties = properties, Inputs = request.Inputs)
+                | None ->
+                    return failwith $"{sshKeyResourceName} with Id={request.Id} not found"
+            else
+                return failwith $"Unknown resource type '{request.Type}'"
         }
 
     override self.Read (request: ReadRequest, ct: CancellationToken): Task<ReadResponse> = 
