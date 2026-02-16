@@ -7,8 +7,8 @@ open Pulumi.LNVPS
 
 [<EntryPoint>]
 let main args =
-    let nostrAuthEvent = Environment.GetEnvironmentVariable LNVPSProvider.NostrEventEnvVarName
-    Provider.Serve(args, LNVPSProvider.Version, (fun _host -> new LNVPSProvider(nostrAuthEvent)), CancellationToken.None)
+    let nostrPrivateKey = Environment.GetEnvironmentVariable LNVPSProvider.NostrPrivateKeyEnvVarName
+    Provider.Serve(args, LNVPSProvider.Version, (fun _host -> new LNVPSProvider(nostrPrivateKey)), CancellationToken.None)
     |> Async.AwaitTask
     |> Async.RunSynchronously
     0

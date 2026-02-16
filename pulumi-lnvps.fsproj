@@ -16,6 +16,7 @@
   <ItemGroup>
     <PackageReference Include="Pulumi" Version="3.88.0" />
     <PackageReference Include="Pulumi.FSharp" Version="3.79.0" />
+    <PackageReference Include="Nostr.Client" Version="2.1.0" />
   </ItemGroup>
 
 </Project>

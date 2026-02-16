@@ -14,12 +14,14 @@ open System.Web
 open Pulumi
 open Pulumi.Experimental
 open Pulumi.Experimental.Provider
+open Nostr.Client
+open Nostr.Client.Messages
+open Nostr.Client.Keys
 
-type LNVPSProvider(nostrAuthEvent: string) =
+type LNVPSProvider(nostrPrivateKey: string) =
     inherit Pulumi.Experimental.Provider.Provider()
 
-    let base64EncodedAuthEvent = Convert.ToBase64String(Text.Encoding.UTF8.GetBytes nostrAuthEvent)
-    static let apiBaseUrl = "https://api.lnvps.com"
+    static let apiBaseUrl = "https://api.lnvps.net"
 
     let httpClient = new HttpClient()
 
@@ -36,11 +38,31 @@ type LNVPSProvider(nostrAuthEvent: string) =
         use reader = new System.IO.StreamReader(stream)
         reader.ReadToEnd().Trim()
 
-    static member val NostrEventEnvVarName = "LNVPS_NOSTR_AUTH_EVENT"
+    static member val NostrPrivateKeyEnvVarName = "LNVPS_NOSTR_PRIV_KEY"
 
     interface IDisposable with
         override self.Dispose (): unit = 
             httpClient.Dispose()
+
+    member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, content: Json.JsonContent) =
+        async {
+            let absoluteUrl = apiBaseUrl + relativeUrl
+            let event = NostrEvent(
+                Kind = NostrKind.HttpAuth,
+                CreatedAt = DateTime.UtcNow,
+                Content = String.Empty,
+                Tags = NostrEventTags(NostrEventTag("u", absoluteUrl), NostrEventTag("method", method.Method))
+            )
+
+            let key = NostrPrivateKey.FromHex nostrPrivateKey
+            let signedEvent = event.Sign key
+            let serializedEvent = Nostr.Client.Json.NostrJson.Serialize signedEvent 
+            let base64EncodedEvent = Convert.ToBase64String(Text.Encoding.UTF8.GetBytes serializedEvent)
+            httpClient.DefaultRequestHeaders.Authorization <- Headers.AuthenticationHeaderValue("Nostr", base64EncodedEvent)
+
+            use message = new HttpRequestMessage(method, absoluteUrl, Content=content)
+            return! httpClient.SendAsync message |> Async.AwaitTask
+        }
     
     override self.GetSchema (request: GetSchemaRequest, ct: CancellationToken): Task<GetSchemaResponse> =
         raise <| NotImplementedException()
@@ -52,7 +74,9 @@ type LNVPSProvider(nostrAuthEvent: string) =
         Task.FromResult <| DiffResponse()
 
     override self.Configure (request: ConfigureRequest, ct: CancellationToken): Task<ConfigureResponse> = 
-        raise <| NotImplementedException()
+        if String.IsNullOrWhiteSpace nostrPrivateKey then
+            failwith $"Environment variable {LNVPSProvider.NostrPrivateKeyEnvVarName} not provided."
+        Task.FromResult <| ConfigureResponse()
 
     override self.Check (request: CheckRequest, ct: CancellationToken): Task<CheckResponse> = 
         raise <| NotImplementedException()
