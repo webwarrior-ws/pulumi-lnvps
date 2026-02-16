@@ -22,6 +22,8 @@ type LNVPSProvider(nostrPrivateKey: string) =
     inherit Pulumi.Experimental.Provider.Provider()
 
     static let sshKeyResourceName = "lnvps:index:SshKey"
+    static let vmResourceName = "lnvps:index:VM"
+    static let ipAssignmentResourceName = "lnvps:index:IpAssignment"
     static let apiBaseUrl = "https://api.lnvps.net"
 
     let httpClient = new HttpClient()
@@ -99,6 +101,49 @@ Response: {responseBody}"""
                                     "description": "SSH key itself."
                                 }
             }"""
+                
+        let vmInputProperties = 
+            sprintf
+                """{
+                                "vmId": {
+                                    "type": "integer",
+                                    "description": "VM Id in LNVPS."
+                                },
+                                "ssh_key": {
+                                    "type": "object",
+                                    "$ref": "#/resources/%s",
+                                    "description": "SSH key installed on VM."
+                                }
+                }"""
+                sshKeyResourceName
+
+        let vmProperties = 
+            sprintf
+                """{
+%s,
+                                "status": {
+                                    "type": "string",
+                                    "description": "VM status."
+                                },
+                                "ip_assignments": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "$ref": "#/resources/%s"
+                                    },
+                                    "description": "VM IP addresses."
+                                }
+                }"""
+                (vmInputProperties.Trim('{', '}', ' '))
+                ipAssignmentResourceName
+
+        let ipAssignmentProperties =
+            """{
+                                "ip": {
+                                    "type": "string",
+                                    "description": "IP address with CIDR notation."
+                                }
+            }"""
 
         let schema =
             sprintf
@@ -106,6 +151,13 @@ Response: {responseBody}"""
                     "name": "lnvps",
                     "version": "%s",
                     "resources": {
+                        "%s" : {
+                            "properties": %s,
+                            "inputProperties": %s
+                        },
+                        "%s" : {
+                            "properties": %s
+                        },
                         "%s" : {
                             "properties": %s,
                             "inputProperties": %s
@@ -118,6 +170,11 @@ Response: {responseBody}"""
                 sshKeyResourceName
                 sshKeyProperties
                 sshKeyInputProperties
+                ipAssignmentResourceName
+                ipAssignmentProperties
+                vmResourceName
+                vmProperties
+                vmInputProperties
         
         Task.FromResult <| GetSchemaResponse(Schema = schema)
 
