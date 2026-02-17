@@ -81,6 +81,74 @@ type LNVPSProvider(nostrPrivateKey: string) =
 Response: {responseBody}"""
         }
     
+    member private self.AsyncGetVMStatus(vmId: uint64) =
+        async {
+            let! response = self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Get)
+            let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+            let vmStatusJson = JsonDocument.Parse(responseBody).RootElement
+
+            let status = PropertyValue(vmStatusJson.GetProperty("status").GetString())
+            let ipAssignments =
+                vmStatusJson.GetProperty("ip_assignments").EnumerateArray()
+                |> Seq.map (fun jsonObject -> 
+                    let ip = jsonObject.GetProperty("ip").GetString()
+                    ImmutableDictionary.CreateRange(Seq.singleton <| KeyValuePair("ip", PropertyValue ip))
+                    |> PropertyValue)
+                |> ImmutableArray.CreateRange
+                |> PropertyValue
+            let sshKey =
+                ResourceReference(
+                    Urn sshKeyResourceName,
+                    PropertyValue(vmStatusJson.GetProperty("ssh_key").GetProperty("id").GetUInt64().ToString()),
+                    LNVPSProvider.Version
+                )
+                |> PropertyValue
+                    
+            return dict [ "status", status; "ip_assignments", ipAssignments; "ssh_key", sshKey ]
+        }
+
+    member private self.AsyncUpdateVM (vmId: uint64) (requestProperties: ImmutableDictionary<string, PropertyValue>) =
+        async {
+            let! vmStatus = self.AsyncGetVMStatus (uint64 vmId)
+
+            match vmStatus.["ssh_key"].TryGetResource(), requestProperties.["ssh_key"].TryGetResource() with
+            | (true, vmSshKeyResource), (true, requestSshKeyResource) when vmSshKeyResource.Id <> requestSshKeyResource.Id ->
+                let vmPatchRequestBody = 
+                    match requestSshKeyResource.Id.TryGetString() with
+                    | true, id -> {| ssh_key_id = uint64 id |}
+                    | _ -> failwith "Could not get SSH key Id from request."
+                do! 
+                    self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Patch, Json.JsonContent.Create vmPatchRequestBody)
+                    |> Async.Ignore
+            | _ -> ()
+
+            do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/re-install", HttpMethod.Patch) |> Async.Ignore
+            printfn $"Re-installing VM with Id={vmId}..."
+            // wait for operation to complete
+            let maxWaitTime = TimeSpan.FromMinutes 5.0
+            let stopWatch = Diagnostics.Stopwatch()
+            stopWatch.Start()
+            let mutable repeat = true
+            while repeat && stopWatch.Elapsed < maxWaitTime do
+                printfn "Waiting for re-install to finish..."
+                do! Async.Sleep(TimeSpan.FromSeconds 5.0)
+                let! currentVmStatus = self.AsyncGetVMStatus (uint64 vmId)
+                match currentVmStatus.["status"].TryGetString() with
+                | false, _ -> failwith "Could not get 'status' field from VM status object"
+                | true, "error" -> failwith "VM status is 'error' after re-install"
+                | true, "unknown" -> failwith "VM status is 'unknown' after re-install"
+                | true, "stopped" -> 
+                    do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/start", HttpMethod.Patch) |> Async.Ignore
+                | true, "pending" -> ()
+                | true, "running" ->
+                    repeat <- false
+                    printfn "VM is ready"
+                | true, unknownStatus -> failwith $"Unknown VM status: '{unknownStatus}' after re-install"
+
+            let! currentVmStatus = self.AsyncGetVMStatus (uint64 vmId)
+            return requestProperties.SetItems currentVmStatus
+        }
+
     override self.GetSchema (request: GetSchemaRequest, ct: CancellationToken): Task<GetSchemaResponse> =
         let sshKeyProperties = 
             """{
@@ -190,13 +258,13 @@ Response: {responseBody}"""
         Task.FromResult <| ConfigureResponse()
 
     override self.Check (request: CheckRequest, ct: CancellationToken): Task<CheckResponse> = 
-        if request.Type = sshKeyResourceName then
+        if request.Type = sshKeyResourceName || request.Type = vmResourceName then
             Task.FromResult <| CheckResponse(Inputs = request.NewInputs)
         else
             failwith $"Unknown resource type '{request.Type}'"
 
     override self.Diff (request: DiffRequest, ct: CancellationToken): Task<DiffResponse> = 
-        if request.Type = sshKeyResourceName then
+        if request.Type = sshKeyResourceName || request.Type = vmResourceName then
             let diff = request.NewInputs.Except request.OldInputs 
             let replaces = diff |> Seq.map (fun pair -> pair.Key) |> Seq.toArray
             Task.FromResult <| DiffResponse(Changes = (replaces.Length > 0), Replaces = replaces)
@@ -212,6 +280,13 @@ Response: {responseBody}"""
                 let json = JsonDocument.Parse(responseBody).RootElement
                 let id = json.GetProperty("id").GetUInt64().ToString()
                 return CreateResponse(Id = id, Properties = request.Properties)
+            elif request.Type = vmResourceName then
+                match request.Properties.["vmId"].TryGetNumber() with
+                | true, vmId ->
+                    let! updatedProperties = self.AsyncUpdateVM (uint64 vmId) request.Properties
+                    return CreateResponse(Properties = updatedProperties)
+                | false, _ ->
+                    return failwith $"Property vmId not present in '{request.Type}'"
             else
                 return failwith $"Unknown resource type '{request.Type}'"
         }
@@ -223,6 +298,14 @@ Response: {responseBody}"""
         async {
             if request.Type = sshKeyResourceName then
                 return failwith $"Resource {sshKeyResourceName} does not support updating."
+            elif request.Type = vmResourceName then
+                let properties = request.Olds.AddRange request.News
+                match properties.["vmId"].TryGetNumber() with
+                | true, vmId ->
+                    let! updatedProperties = self.AsyncUpdateVM (uint64 vmId) properties
+                    return UpdateResponse(Properties = updatedProperties)
+                | false, _ ->
+                    return failwith $"Property vmId not present in '{request.Type}'"
             else
                 return failwith $"Unknown resource type '{request.Type}'"
         }
@@ -234,6 +317,8 @@ Response: {responseBody}"""
         async {
             if request.Type = sshKeyResourceName then
                 return failwith $"Resource {sshKeyResourceName} does not support deletion."
+            elif request.Type = vmResourceName then
+                ()
             else
                 return failwith $"Unknown resource type '{request.Type}'"
         }
@@ -256,6 +341,13 @@ Response: {responseBody}"""
                     return ReadResponse(Id = request.Id, Properties = properties, Inputs = request.Inputs)
                 | None ->
                     return failwith $"{sshKeyResourceName} with Id={request.Id} not found"
+            elif request.Type = vmResourceName then
+                match request.Inputs.["vmId"].TryGetNumber() with
+                | true, vmId ->
+                    let! vmProperties = self.AsyncGetVMStatus (uint64 vmId)
+                    return ReadResponse(Id = request.Id, Properties = vmProperties, Inputs = request.Inputs)
+                | false, _ ->
+                    return failwith $"Property vmId not present in '{request.Type}'"
             else
                 return failwith $"Unknown resource type '{request.Type}'"
         }
