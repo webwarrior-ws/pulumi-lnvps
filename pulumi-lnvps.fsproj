@@ -17,6 +17,7 @@
     <PackageReference Include="Pulumi" Version="3.88.0" />
     <PackageReference Include="Pulumi.FSharp" Version="3.79.0" />
     <PackageReference Include="Nostr.Client" Version="2.1.0" />
+    <PackageReference Include="Fsdk" Version="0.6.1--date20250902-0201.git-78b90ac" />
   </ItemGroup>
 
 </Project>

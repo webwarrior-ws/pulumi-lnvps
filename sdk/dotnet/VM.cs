@@ -30,12 +30,6 @@ namespace Pulumi.Lnvps
         [Output("status")]
         public Output<string?> Status { get; private set; } = null!;
 
-        /// <summary>
-        /// VM Id in LNVPS.
-        /// </summary>
-        [Output("vmId")]
-        public Output<int?> VmId { get; private set; } = null!;
-
 
         /// <summary>
         /// Create a VM resource with the given unique name, arguments, and options.
@@ -82,16 +76,22 @@ namespace Pulumi.Lnvps
     public sealed class VMArgs : global::Pulumi.ResourceArgs
     {
         /// <summary>
+        /// VM image Id
+        /// </summary>
+        [Input("image_id")]
+        public Input<double>? Image_id { get; set; }
+
+        /// <summary>
         /// SSH key installed on VM.
         /// </summary>
         [Input("ssh_key")]
         public Input<Pulumi.Lnvps.SshKey>? Ssh_key { get; set; }
 
         /// <summary>
-        /// VM Id in LNVPS.
+        /// VM template Id
         /// </summary>
-        [Input("vmId")]
-        public Input<int>? VmId { get; set; }
+        [Input("template_id")]
+        public Input<double>? Template_id { get; set; }
 
         public VMArgs()
         {
