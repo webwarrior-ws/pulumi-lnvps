@@ -48,6 +48,30 @@ type LNVPSProvider(nostrPrivateKey: string) =
         override self.Dispose (): unit = 
             httpClient.Dispose()
 
+    member private self.GetPropertyString(dict: ImmutableDictionary<string, PropertyValue>, name: string, ?lineNumber: string) =
+        let lineNumberString =
+            match lineNumber with
+            | Some line -> $" at line {line}"
+            | None -> ""
+        match dict.TryGetValue name with
+        | true, propertyValue ->
+            match propertyValue.TryGetString() with
+            | true, value -> value
+            | false, _ -> failwith $"Value of property {name} ({propertyValue}) is not a string{lineNumberString}"
+        | false, _ -> failwith $"No {name} property in dictionary{lineNumberString}"
+
+    member private self.GetPropertyNumber(dict: ImmutableDictionary<string, PropertyValue>, name: string, ?lineNumber: string) =
+        let lineNumberString =
+            match lineNumber with
+            | Some line -> $" at line {line}"
+            | None -> ""
+        match dict.TryGetValue name with
+        | true, propertyValue ->
+            match propertyValue.TryGetNumber() with
+            | true, value -> value
+            | false, _ -> failwith $"Value of property {name} ({propertyValue}) is not a number{lineNumberString}"
+        | false, _ -> failwith $"No {name} property in dictionary{lineNumberString}"
+
     member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, ?content: Json.JsonContent) =
         async {
             let absoluteUrl = apiBaseUrl + relativeUrl
@@ -145,13 +169,14 @@ Response: {responseBody}"""
         async {
             let! vmStatus = self.AsyncGetVMStatus vmId
 
-            match vmStatus.["ssh_key_id"].TryGetString(), requestProperties.["ssh_key_id"].TryGetString() with
-            | (true, vmSshKeyId), (true, requestSshKeyId) when vmSshKeyId <> requestSshKeyId ->
+            let _, vmSshKeyId = vmStatus.["ssh_key_id"].TryGetString()
+            let requestSshKeyId = self.GetPropertyString(requestProperties, "ssh_key_id", __LINE__)
+
+            if vmSshKeyId <> requestSshKeyId then
                 let vmPatchRequestBody = {| ssh_key_id = uint64 requestSshKeyId |}
                 do! 
                     self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Patch, Json.JsonContent.Create vmPatchRequestBody)
                     |> Async.Ignore
-            | _ -> ()
 
             do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/re-install", HttpMethod.Patch) |> Async.Ignore
             printfn $"Re-installing VM with Id={vmId}..."
@@ -295,8 +320,8 @@ Response: {responseBody}"""
         async {
             if request.Type = sshKeyResourceName then
                 let createSshKey = 
-                    let _, name = request.Properties.["name"].TryGetString()
-                    let _, key_data = request.Properties.["key_data"].TryGetString()
+                    let name = self.GetPropertyString(request.Properties, "name", __LINE__)
+                    let key_data = self.GetPropertyString(request.Properties, "key_data", __LINE__)
                     {| name = name; key_data = key_data |}
                 let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Post, Json.JsonContent.Create createSshKey)
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
@@ -305,9 +330,9 @@ Response: {responseBody}"""
                 return CreateResponse(Id = id, Properties = request.Properties)
             elif request.Type = vmResourceName then
                 let createVmRequestObject =
-                    let _, templateId = request.Properties.["template_id"].TryGetNumber()
-                    let _, imageId = request.Properties.["image_id"].TryGetNumber()
-                    let _, sshKeyId = request.Properties.["ssh_key_id"].TryGetString()
+                    let templateId = self.GetPropertyNumber(request.Properties, "template_id", __LINE__)
+                    let imageId = self.GetPropertyNumber(request.Properties, "image_id", __LINE__)
+                    let sshKeyId = self.GetPropertyString(request.Properties, "ssh_key_id", __LINE__)
                     {|
                         template_id = templateId
                         image_id = imageId
