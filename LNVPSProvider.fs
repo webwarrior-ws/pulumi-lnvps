@@ -97,15 +97,11 @@ Response: {responseBody}"""
                     |> PropertyValue)
                 |> ImmutableArray.CreateRange
                 |> PropertyValue
-            let sshKey =
-                ResourceReference(
-                    Urn sshKeyResourceName,
-                    PropertyValue(vmStatusJson.GetProperty("ssh_key").GetProperty("id").GetUInt64().ToString()),
-                    LNVPSProvider.Version
-                )
+            let sshKeyId =
+                vmStatusJson.GetProperty("ssh_key").GetProperty("id").GetUInt64().ToString()
                 |> PropertyValue
                     
-            return dict [ "status", status; "ip_assignments", ipAssignments; "ssh_key", sshKey ]
+            return dict [ "status", status; "ip_assignments", ipAssignments; "ssh_key_id", sshKeyId ]
         }
 
     member private self.AsyncWaitForVMToBeRunning (maxWaitTime: TimeSpan) (timeBetweenRetires: TimeSpan) (vmId: uint64) =
@@ -149,12 +145,9 @@ Response: {responseBody}"""
         async {
             let! vmStatus = self.AsyncGetVMStatus vmId
 
-            match vmStatus.["ssh_key"].TryGetResource(), requestProperties.["ssh_key"].TryGetResource() with
-            | (true, vmSshKeyResource), (true, requestSshKeyResource) when vmSshKeyResource.Id <> requestSshKeyResource.Id ->
-                let vmPatchRequestBody = 
-                    match requestSshKeyResource.Id.TryGetString() with
-                    | true, id -> {| ssh_key_id = uint64 id |}
-                    | _ -> failwith "Could not get SSH key Id from request."
+            match vmStatus.["ssh_key_id"].TryGetString(), requestProperties.["ssh_key_id"].TryGetString() with
+            | (true, vmSshKeyId), (true, requestSshKeyId) when vmSshKeyId <> requestSshKeyId ->
+                let vmPatchRequestBody = {| ssh_key_id = uint64 requestSshKeyId |}
                 do! 
                     self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Patch, Json.JsonContent.Create vmPatchRequestBody)
                     |> Async.Ignore
@@ -190,15 +183,12 @@ Response: {responseBody}"""
             }"""
                 
         let vmSshKeyProperty =
-            sprintf
-                """
-                                "ssh_key": {
-                                    "type": "object",
-                                    "$ref": "#/resources/%s",
-                                    "description": "SSH key installed on VM."
+            """
+                                "ssh_key_id": {
+                                    "type": "string",
+                                    "description": "ID of SSH key installed on VM."
                                 }
-                """
-                sshKeyResourceName
+            """
 
         let vmInputProperties = 
             sprintf
@@ -317,14 +307,11 @@ Response: {responseBody}"""
                 let createVmRequestObject =
                     let _, templateId = request.Properties.["template_id"].TryGetNumber()
                     let _, imageId = request.Properties.["image_id"].TryGetNumber()
-                    let sshKeyId = 
-                        match request.Properties.["ssh_key"].TryGetResource() with
-                        | true, sshKey -> sshKey.Id.TryGetString() |> snd |> uint64
-                        | false, _ -> failwith "ssh_key property is not a resource"
+                    let _, sshKeyId = request.Properties.["ssh_key_id"].TryGetString()
                     {|
                         template_id = templateId
                         image_id = imageId
-                        ssh_key_id = sshKeyId
+                        ssh_key_id = uint64 sshKeyId
                     |}
                 let! response = self.AsyncSendRequest("/api/v1/vm", HttpMethod.Post, Json.JsonContent.Create createVmRequestObject)
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask

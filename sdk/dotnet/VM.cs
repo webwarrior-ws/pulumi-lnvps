@@ -19,10 +19,10 @@ namespace Pulumi.Lnvps
         public Output<ImmutableArray<Pulumi.Lnvps.IpAssignment>> Ip_assignments { get; private set; } = null!;
 
         /// <summary>
-        /// SSH key installed on VM.
+        /// ID of SSH key installed on VM.
         /// </summary>
-        [Output("ssh_key")]
-        public Output<Pulumi.Lnvps.SshKey?> Ssh_key { get; private set; } = null!;
+        [Output("ssh_key_id")]
+        public Output<string?> Ssh_key_id { get; private set; } = null!;
 
         /// <summary>
         /// VM status.
@@ -82,10 +82,10 @@ namespace Pulumi.Lnvps
         public Input<double>? Image_id { get; set; }
 
         /// <summary>
-        /// SSH key installed on VM.
+        /// ID of SSH key installed on VM.
         /// </summary>
-        [Input("ssh_key")]
-        public Input<Pulumi.Lnvps.SshKey>? Ssh_key { get; set; }
+        [Input("ssh_key_id")]
+        public Input<string>? Ssh_key_id { get; set; }
 
         /// <summary>
         /// VM template Id
