@@ -304,7 +304,10 @@ Response: {responseBody}"""
     member private self.AsyncCreate(request: CreateRequest): Async<CreateResponse> =
         async {
             if request.Type = sshKeyResourceName then
-                let createSshKey = {| name = request.Properties.["name"]; key_data = request.Properties.["key_data"] |}
+                let createSshKey = 
+                    let _, name = request.Properties.["name"].TryGetString()
+                    let _, key_data = request.Properties.["key_data"].TryGetString()
+                    {| name = name; key_data = key_data |}
                 let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Post, Json.JsonContent.Create createSshKey)
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
                 let json = JsonDocument.Parse(responseBody).RootElement
