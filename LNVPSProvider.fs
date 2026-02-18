@@ -86,7 +86,7 @@ Response: {responseBody}"""
         async {
             let! response = self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Get)
             let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-            let vmStatusJson = JsonDocument.Parse(responseBody).RootElement
+            let vmStatusJson = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
 
             let status = PropertyValue(vmStatusJson.GetProperty("status").GetString())
             let ipAssignments =
@@ -139,7 +139,7 @@ Response: {responseBody}"""
                 do! Async.Sleep timeBetweenRetires
                 let! response = self.AsyncSendRequest($"/api/v1/payment/{paymentId}", HttpMethod.Get)
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                let responseJson = JsonDocument.Parse(responseBody).RootElement
+                let responseJson = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
                 if responseJson.GetProperty("is_paid").GetBoolean() then
                     return ()
             return failwith $"Pyment id={paymentId} is still not paid after {maxWaitTime}."
@@ -310,7 +310,7 @@ Response: {responseBody}"""
                     {| name = name; key_data = key_data |}
                 let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Post, Json.JsonContent.Create createSshKey)
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                let json = JsonDocument.Parse(responseBody).RootElement
+                let json = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
                 let id = json.GetProperty("id").GetUInt64().ToString()
                 return CreateResponse(Id = id, Properties = request.Properties)
             elif request.Type = vmResourceName then
@@ -328,7 +328,7 @@ Response: {responseBody}"""
                     |}
                 let! response = self.AsyncSendRequest("/api/v1/vm", HttpMethod.Post, Json.JsonContent.Create createVmRequestObject)
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                let vmStatus = JsonDocument.Parse(responseBody).RootElement
+                let vmStatus = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
                 let vmId = vmStatus.GetProperty("id").GetUInt64()
                 
                 // Send invoice via Tg
@@ -400,7 +400,7 @@ Invoice for VM '{request.Name}' ({amount} sats):\
             if request.Type = sshKeyResourceName then
                 let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Get)
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                let json = JsonDocument.Parse(responseBody).RootElement
+                let json = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
                 let maybeUserSshKeyObject = 
                     json.EnumerateArray()
                     |> Seq.tryFind (fun object -> object.GetProperty("id").GetUInt64().ToString() = request.Id)
