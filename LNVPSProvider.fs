@@ -355,7 +355,7 @@ Invoice for VM '{request.Name}' ({amount} sats):\
 {invoice}\
 ```"
                 let sendTgScriptPath = 
-                    IO.Path.Combine(Environment.CurrentDirectory, "TravelBudsFrontend", "scripts", "sendTelegramMessage.fsx")
+                    IO.Path.Combine(Environment.CurrentDirectory, "..", "TravelBudsFrontend", "scripts", "sendTelegramMessage.fsx")
                 let sendTgResult =
                     Execute(
                         { ProcessDetails.Command = "dotnet"; Arguments = $"fsi {sendTgScriptPath} \"{message}\"" }, 
@@ -364,12 +364,9 @@ Invoice for VM '{request.Name}' ({amount} sats):\
                 match sendTgResult.Result with
                 | Error (errorCode, output) -> 
                     return failwith $"""Sending Telegram message with invoice failed with code {errorCode}.
-STDOUT:
-{output.StdOut}
-STDERR:
-{output.StdErr}
-Working directory:
-{Environment.CurrentDirectory}
+STDOUT: {output.StdOut}
+STDERR: {output.StdErr}
+Working directory: {Environment.CurrentDirectory}
 """
                 | _ -> ()
                 
