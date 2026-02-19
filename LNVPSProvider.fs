@@ -349,10 +349,10 @@ Response: {responseBody}"""
                 let paymentId = invoiceData.GetProperty("id").GetString()
                 let invoice = invoiceData.GetProperty("data").GetProperty("lightning").GetString()
                 let amount = invoiceData.GetProperty("amount").GetUInt64()
-                let message = $"[Automated Message]\
-Invoice for VM '{request.Name}' ({amount} sats):\
-```\
-{invoice}\
+                let message = $"[Automated Message]
+Invoice for VM '{request.Name}' ({amount} sats):
+```
+{invoice}
 ```"
                 let sendTgScriptPath = 
                     IO.Path.Combine(Environment.CurrentDirectory, "..", "TravelBudsFrontend", "scripts", "sendTelegramMessage.fsx")
