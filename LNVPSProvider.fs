@@ -372,12 +372,12 @@ Working directory: {Environment.CurrentDirectory}
                 
                 do!
                     self.AsyncWaitForPayment
-                        (min (TimeSpan.FromMinutes 10.0) request.Timeout)
+                        (TimeSpan.FromMinutes 10.0)
                         (TimeSpan.FromSeconds 5.0)
                         paymentId
                 do!
                     self.AsyncWaitForVMToBeRunning
-                        (min (TimeSpan.FromMinutes 5.0) request.Timeout)
+                        (TimeSpan.FromMinutes 5.0)
                         (TimeSpan.FromSeconds 5.0)
                         vmId
 
