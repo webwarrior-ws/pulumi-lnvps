@@ -381,7 +381,8 @@ Working directory: {Environment.CurrentDirectory}
                         (TimeSpan.FromSeconds 5.0)
                         vmId
 
-                let! updatedProperties = self.AsyncUpdateVM vmId request.Properties
+                let! currentVmStatus = self.AsyncGetVMStatus vmId
+                let updatedProperties = request.Properties.SetItems currentVmStatus
                 return CreateResponse(Id = string vmId, Properties = updatedProperties)
             else
                 return failwith $"Unknown resource type '{request.Type}'"
