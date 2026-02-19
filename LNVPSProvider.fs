@@ -179,7 +179,6 @@ Response: {responseBody}"""
                     |> Async.Ignore
 
             do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/re-install", HttpMethod.Patch) |> Async.Ignore
-            printfn $"Re-installing VM with Id={vmId}..."
             do! self.AsyncWaitForVMToBeRunning (TimeSpan.FromMinutes 5.0) (TimeSpan.FromSeconds 5.0) vmId
             
             let! currentVmStatus = self.AsyncGetVMStatus vmId
@@ -355,20 +354,35 @@ Invoice for VM '{request.Name}' ({amount} sats):\
 ```\
 {invoice}\
 ```"
-                printfn "Current directory: %s" Environment.CurrentDirectory
                 let sendTgScriptPath = 
                     IO.Path.Combine(Environment.CurrentDirectory, "TravelBudsFrontend", "scripts", "sendTelegramMessage.fsx")
                 let sendTgResult =
                     Execute(
                         { ProcessDetails.Command = "dotnet"; Arguments = $"fsi {sendTgScriptPath} \"{message}\"" }, 
-                        Echo.All
+                        Echo.Off
                     )
                 match sendTgResult.Result with
-                | Error (_, _) -> return failwith "Sending Telegram message with invoice failed"
+                | Error (errorCode, output) -> 
+                    return failwith $"""Sending Telegram message with invoice failed with code {errorCode}.
+STDOUT:
+{output.StdOut}
+STDERR:
+{output.StdErr}
+Working directory:
+{Environment.CurrentDirectory}
+"""
                 | _ -> ()
                 
-                do! self.AsyncWaitForPayment (TimeSpan.FromMinutes 10.0) (TimeSpan.FromSeconds 5.0) paymentId
-                do! self.AsyncWaitForVMToBeRunning (TimeSpan.FromMinutes 5.0) (TimeSpan.FromSeconds 5.0) vmId
+                do!
+                    self.AsyncWaitForPayment
+                        (min (TimeSpan.FromMinutes 10.0) request.Timeout)
+                        (TimeSpan.FromSeconds 5.0)
+                        paymentId
+                do!
+                    self.AsyncWaitForVMToBeRunning
+                        (min (TimeSpan.FromMinutes 5.0) request.Timeout)
+                        (TimeSpan.FromSeconds 5.0)
+                        vmId
 
                 let! updatedProperties = self.AsyncUpdateVM vmId request.Properties
                 return CreateResponse(Id = string vmId, Properties = updatedProperties)
