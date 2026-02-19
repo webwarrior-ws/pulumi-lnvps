@@ -24,7 +24,6 @@ type LNVPSProvider(nostrPrivateKey: string) =
 
     static let sshKeyResourceName = "lnvps:index:SshKey"
     static let vmResourceName = "lnvps:index:VM"
-    static let ipAssignmentResourceName = "lnvps:index:IpAssignment"
     static let apiBaseUrl = "https://api.lnvps.net"
 
     let httpClient = new HttpClient()
@@ -115,10 +114,7 @@ Response: {responseBody}"""
             let status = PropertyValue(vmStatusJson.GetProperty("status").GetString())
             let ipAssignments =
                 vmStatusJson.GetProperty("ip_assignments").EnumerateArray()
-                |> Seq.map (fun jsonObject -> 
-                    let ip = jsonObject.GetProperty("ip").GetString()
-                    ImmutableDictionary.CreateRange(Seq.singleton <| KeyValuePair("ip", PropertyValue ip))
-                    |> PropertyValue)
+                |> Seq.map (fun jsonObject -> jsonObject.GetProperty("ip").GetString() |> PropertyValue)
                 |> ImmutableArray.CreateRange
                 |> PropertyValue
             let sshKeyId =
@@ -155,14 +151,13 @@ Response: {responseBody}"""
             let stopWatch = Diagnostics.Stopwatch()
             stopWatch.Start()
             while stopWatch.Elapsed < maxWaitTime do
-                printfn "Waiting for payment to be accepted..."
                 do! Async.Sleep timeBetweenRetires
                 let! response = self.AsyncSendRequest($"/api/v1/payment/{paymentId}", HttpMethod.Get)
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
                 let responseJson = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
                 if responseJson.GetProperty("is_paid").GetBoolean() then
                     return ()
-            return failwith $"Pyment id={paymentId} is still not paid after {maxWaitTime}."
+            return failwith $"Payment id={paymentId} is still not paid after {maxWaitTime}."
         }
 
     member private self.AsyncUpdateVM (vmId: uint64) (requestProperties: ImmutableDictionary<string, PropertyValue>) =
@@ -240,22 +235,12 @@ Response: {responseBody}"""
                                 "ip_assignments": {
                                     "type": "array",
                                     "items": {
-                                        "type": "object",
-                                        "$ref": "#/resources/%s"
+                                        "type": "string"
                                     },
                                     "description": "VM IP addresses."
                                 }
                 }"""
                 vmSshKeyProperty
-                ipAssignmentResourceName
-
-        let ipAssignmentProperties =
-            """{
-                                "ip": {
-                                    "type": "string",
-                                    "description": "IP address with CIDR notation."
-                                }
-            }"""
 
         let schema =
             sprintf
@@ -266,9 +251,6 @@ Response: {responseBody}"""
                         "%s" : {
                             "properties": %s,
                             "inputProperties": %s
-                        },
-                        "%s" : {
-                            "properties": %s
                         },
                         "%s" : {
                             "properties": %s,
@@ -282,8 +264,6 @@ Response: {responseBody}"""
                 sshKeyResourceName
                 sshKeyProperties
                 sshKeyInputProperties
-                ipAssignmentResourceName
-                ipAssignmentProperties
                 vmResourceName
                 vmProperties
                 vmInputProperties

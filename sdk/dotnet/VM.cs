@@ -16,7 +16,7 @@ namespace Pulumi.Lnvps
         /// VM IP addresses.
         /// </summary>
         [Output("ip_assignments")]
-        public Output<ImmutableArray<Pulumi.Lnvps.IpAssignment>> Ip_assignments { get; private set; } = null!;
+        public Output<ImmutableArray<string>> Ip_assignments { get; private set; } = null!;
 
         /// <summary>
         /// ID of SSH key installed on VM.
