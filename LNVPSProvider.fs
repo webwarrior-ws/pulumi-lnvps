@@ -302,10 +302,14 @@ Response: {responseBody}"""
             failwith $"Unknown resource type '{request.Type}'"
 
     override self.Diff (request: DiffRequest, ct: CancellationToken): Task<DiffResponse> = 
-        if request.Type = sshKeyResourceName || request.Type = vmResourceName then
-            let diff = request.NewInputs.Except request.OldInputs 
-            let replaces = diff |> Seq.map (fun pair -> pair.Key) |> Seq.toArray
-            Task.FromResult <| DiffResponse(Changes = (replaces.Length > 0), Replaces = replaces)
+        let diff = request.NewInputs.Except request.OldState 
+        let changedPropertiesNames = diff |> Seq.map (fun pair -> pair.Key) |> Seq.toArray
+        let hasChanges = changedPropertiesNames.Length > 0
+
+        if request.Type = sshKeyResourceName then
+            Task.FromResult <| DiffResponse(Changes = hasChanges, Replaces = changedPropertiesNames)
+        elif request.Type = vmResourceName then
+            Task.FromResult <| DiffResponse(Changes = hasChanges, Diffs = changedPropertiesNames)
         else
             failwith $"Unknown resource type '{request.Type}'"
 
