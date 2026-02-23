@@ -128,36 +128,50 @@ Response: {responseBody}"""
         async {
             let stopWatch = Diagnostics.Stopwatch()
             stopWatch.Start()
-            while stopWatch.Elapsed < maxWaitTime do
-                printfn "Waiting for VM to be running..."
-                do! Async.Sleep timeBetweenRetires
-                let! currentVmStatus = self.AsyncGetVMStatus vmId
-                match currentVmStatus.["status"].TryGetString() with
-                | false, _ -> failwith "Could not get 'status' field from VM status object"
-                | true, "error" -> failwith "VM status is 'error'"
-                | true, "unknown" -> failwith "VM status is 'unknown'"
-                | true, "stopped" -> 
-                    do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/start", HttpMethod.Patch) |> Async.Ignore
-                | true, "pending" -> ()
-                | true, "running" ->
-                    printfn "VM is ready"
-                    return ()
-                | true, unknownStatus -> failwith $"Unknown VM status: '{unknownStatus}'"
-            return failwith $"VM is still not runninng after {maxWaitTime}."
+
+            let rec loop () =
+                async {
+                    if stopWatch.Elapsed >= maxWaitTime then
+                        return failwith $"VM is still not runninng after {maxWaitTime}."
+                    else
+                        do! Async.Sleep timeBetweenRetires
+                        let! currentVmStatus = self.AsyncGetVMStatus vmId
+                        match currentVmStatus.["status"].TryGetString() with
+                        | false, _ -> failwith "Could not get 'status' field from VM status object"
+                        | true, "error" -> failwith "VM status is 'error'"
+                        | true, "unknown" -> failwith "VM status is 'unknown'"
+                        | true, "stopped" -> 
+                            do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/start", HttpMethod.Patch) |> Async.Ignore
+                        | true, "pending" -> return! loop ()
+                        | true, "running" ->
+                            return ()
+                        | true, unknownStatus -> failwith $"Unknown VM status: '{unknownStatus}'"
+                }
+
+            return! loop ()
         }
 
-    member private self.AsyncWaitForPayment (maxWaitTime: TimeSpan) (timeBetweenRetires: TimeSpan) (paymentId: string) =
+    member private self.AsyncWaitForPayment (maxWaitTime: TimeSpan) (timeBetweenRetries: TimeSpan) (paymentId: string) =
         async {
             let stopWatch = Diagnostics.Stopwatch()
             stopWatch.Start()
-            while stopWatch.Elapsed < maxWaitTime do
-                do! Async.Sleep timeBetweenRetires
-                let! response = self.AsyncSendRequest($"/api/v1/payment/{paymentId}", HttpMethod.Get)
-                let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                let responseJson = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
-                if responseJson.GetProperty("is_paid").GetBoolean() then
-                    return ()
-            return failwith $"Payment id={paymentId} is still not paid after {maxWaitTime}."
+
+            let rec loop () =
+                async {
+                    if stopWatch.Elapsed >= maxWaitTime then
+                        return failwith $"Payment id={paymentId} is still not paid after {maxWaitTime}."
+                    else
+                        do! Async.Sleep timeBetweenRetries
+                        let! response = self.AsyncSendRequest($"/api/v1/payment/{paymentId}", HttpMethod.Get)
+                        let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+                        let responseJson = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
+                        if responseJson.GetProperty("is_paid").GetBoolean() then
+                            return ()
+                        else
+                            return! loop ()
+                }
+
+            return! loop ()
         }
 
     member private self.AsyncUpdateVM (vmId: uint64) (requestProperties: ImmutableDictionary<string, PropertyValue>) =
