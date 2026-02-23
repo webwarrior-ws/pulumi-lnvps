@@ -329,26 +329,26 @@ Response: {responseBody}"""
                 let paymentId = invoiceData.GetProperty("id").GetString()
                 let invoice = invoiceData.GetProperty("data").GetProperty("lightning").GetString()
                 let amount = invoiceData.GetProperty("amount").GetUInt64()
-                let message = $"[Automated Message]
-Invoice for VM '{request.Name}' ({amount} sats):
-```
-{invoice}
-```"
+                let tgMessage = $"[Automated Message]
+Invoice for VM '{request.Name}' ({amount} sats):"
+                let tgMessageWithInvoice = invoice
+
                 let sendTgScriptPath = 
                     IO.Path.Combine(Environment.CurrentDirectory, "..", "TravelBudsFrontend", "scripts", "sendTelegramMessage.fsx")
-                let sendTgResult =
-                    Execute(
-                        { ProcessDetails.Command = "dotnet"; Arguments = $"fsi {sendTgScriptPath} \"{message}\"" }, 
-                        Echo.Off
-                    )
-                match sendTgResult.Result with
-                | Error (errorCode, output) -> 
-                    return failwith $"""Sending Telegram message with invoice failed with code {errorCode}.
+                for message in [ tgMessage; tgMessageWithInvoice ] do
+                    let sendTgResult =
+                        Execute(
+                            { ProcessDetails.Command = "dotnet"; Arguments = $"fsi {sendTgScriptPath} \"{message}\"" }, 
+                            Echo.Off
+                        )
+                    match sendTgResult.Result with
+                    | Error (errorCode, output) -> 
+                        return failwith $"""Sending Telegram message with invoice failed with code {errorCode}.
 STDOUT: {output.StdOut}
 STDERR: {output.StdErr}
 Working directory: {Environment.CurrentDirectory}
 """
-                | _ -> ()
+                    | _ -> ()
                 
                 do!
                     self.AsyncWaitForPayment
