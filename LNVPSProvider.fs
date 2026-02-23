@@ -111,7 +111,7 @@ Response: {responseBody}"""
             let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
             let vmStatusJson = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
 
-            let status = PropertyValue(vmStatusJson.GetProperty("status").GetString())
+            let status = PropertyValue(vmStatusJson.GetProperty("status").GetProperty("state").GetString())
             let ipAssignments =
                 vmStatusJson.GetProperty("ip_assignments").EnumerateArray()
                 |> Seq.map (fun jsonObject -> jsonObject.GetProperty("ip").GetString() |> PropertyValue)
