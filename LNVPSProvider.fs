@@ -429,12 +429,8 @@ Working directory: {Environment.CurrentDirectory}
                 | None ->
                     return failwith $"{sshKeyResourceName} with Id={request.Id} not found"
             elif request.Type = vmResourceName then
-                match request.Inputs.["vmId"].TryGetNumber() with
-                | true, vmId ->
-                    let! vmProperties = self.AsyncGetVMStatus (uint64 vmId)
-                    return ReadResponse(Id = request.Id, Properties = vmProperties, Inputs = request.Inputs)
-                | false, _ ->
-                    return failwith $"Property vmId not present in '{request.Type}'"
+                let! vmProperties = self.AsyncGetVMStatus (uint64 request.Id)
+                return ReadResponse(Id = request.Id, Properties = vmProperties, Inputs = request.Inputs)
             else
                 return failwith $"Unknown resource type '{request.Type}'"
         }
