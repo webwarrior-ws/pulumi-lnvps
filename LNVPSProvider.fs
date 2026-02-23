@@ -114,7 +114,11 @@ Response: {responseBody}"""
             let status = PropertyValue(vmStatusJson.GetProperty("status").GetProperty("state").GetString())
             let ipAssignments =
                 vmStatusJson.GetProperty("ip_assignments").EnumerateArray()
-                |> Seq.map (fun jsonObject -> jsonObject.GetProperty("ip").GetString() |> PropertyValue)
+                |> Seq.map 
+                    (fun jsonObject -> 
+                        let ipWithSubnetMask = jsonObject.GetProperty("ip").GetString()
+                        let ip = ipWithSubnetMask.Split('/').[0]
+                        PropertyValue ip)
                 |> ImmutableArray.CreateRange
                 |> PropertyValue
             let sshKeyId =
