@@ -394,7 +394,7 @@ Working directory: {Environment.CurrentDirectory}
             if request.Type = sshKeyResourceName then
                 return failwith $"Resource {sshKeyResourceName} does not support updating."
             elif request.Type = vmResourceName then
-                let properties = request.Olds.AddRange request.News
+                let properties = request.Olds.SetItems request.News
                 let! updatedProperties = self.AsyncUpdateVM (uint64 request.Id) properties
                 return UpdateResponse(Properties = updatedProperties)
             else
