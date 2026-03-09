@@ -16,13 +16,13 @@ namespace Pulumi.Lnvps
         /// VM IP addresses.
         /// </summary>
         [Output("ip_assignments")]
-        public Output<ImmutableArray<string>> Ip_assignments { get; private set; } = null!;
+        public Output<ImmutableArray<string>> IpAssignments { get; private set; } = null!;
 
         /// <summary>
         /// ID of SSH key installed on VM.
         /// </summary>
         [Output("ssh_key_id")]
-        public Output<string?> Ssh_key_id { get; private set; } = null!;
+        public Output<string?> SshKeyId { get; private set; } = null!;
 
         /// <summary>
         /// VM status.
@@ -79,19 +79,19 @@ namespace Pulumi.Lnvps
         /// VM image Id
         /// </summary>
         [Input("image_id")]
-        public Input<double>? Image_id { get; set; }
+        public Input<double>? ImageId { get; set; }
 
         /// <summary>
         /// ID of SSH key installed on VM.
         /// </summary>
         [Input("ssh_key_id")]
-        public Input<string>? Ssh_key_id { get; set; }
+        public Input<string>? SshKeyId { get; set; }
 
         /// <summary>
         /// VM template Id
         /// </summary>
         [Input("template_id")]
-        public Input<double>? Template_id { get; set; }
+        public Input<double>? TemplateId { get; set; }
 
         public VMArgs()
         {

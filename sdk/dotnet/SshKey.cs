@@ -67,7 +67,7 @@ namespace Pulumi.Lnvps
         /// SSH key itself.
         /// </summary>
         [Input("key_data")]
-        public Input<string>? Key_data { get; set; }
+        public Input<string>? KeyData { get; set; }
 
         /// <summary>
         /// Name of the SSH key.

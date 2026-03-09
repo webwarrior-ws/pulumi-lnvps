@@ -215,7 +215,12 @@ Response: {responseBody}"""
                                 },
                                 "key_data": {
                                     "type": "string",
-                                    "description": "SSH key itself."
+                                    "description": "SSH key itself.",
+                                    "language": {
+                                        "csharp": { 
+                                            "name": "KeyData"
+                                        }
+                                    }
                                 }
             }"""
                 
@@ -223,7 +228,12 @@ Response: {responseBody}"""
             """
                                 "ssh_key_id": {
                                     "type": "string",
-                                    "description": "ID of SSH key installed on VM."
+                                    "description": "ID of SSH key installed on VM.",
+                                    "language": {
+                                        "csharp": { 
+                                            "name": "SshKeyId"
+                                        }
+                                    }
                                 }
             """
 
@@ -233,11 +243,21 @@ Response: {responseBody}"""
 %s,
                                 "template_id": {
                                     "type": "number",
-                                    "description": "VM template Id"
+                                    "description": "VM template Id",
+                                    "language": {
+                                        "csharp": { 
+                                            "name": "TemplateId"
+                                        }
+                                    }
                                 },
                                 "image_id": {
                                     "type": "number",
-                                    "description": "VM image Id"
+                                    "description": "VM image Id",
+                                    "language": {
+                                        "csharp": { 
+                                            "name": "ImageId"
+                                        }
+                                    }
                                 }
                 }"""
                 vmSshKeyProperty
@@ -255,7 +275,12 @@ Response: {responseBody}"""
                                     "items": {
                                         "type": "string"
                                     },
-                                    "description": "VM IP addresses."
+                                    "description": "VM IP addresses.",
+                                    "language": {
+                                        "csharp": { 
+                                            "name": "IpAssignments"
+                                        }
+                                    }
                                 }
                 }"""
                 vmSshKeyProperty
