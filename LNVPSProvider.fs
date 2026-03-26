@@ -19,11 +19,16 @@ open Nostr.Client.Messages
 open Nostr.Client.Keys
 open Fsdk.Process
 
+type VMTemplateType =
+    | Standard
+    | Custom
+
 type LNVPSProvider(nostrPrivateKey: string) =
     inherit Pulumi.Experimental.Provider.Provider()
 
     static let sshKeyResourceName = "lnvps:index:SshKey"
     static let vmResourceName = "lnvps:index:VM"
+    static let customVmResourceName = "lnvps:index:CustomVM"
     static let apiBaseUrl = "https://api.lnvps.net"
 
     let httpClient = new HttpClient()
@@ -198,6 +203,109 @@ Response: {responseBody}"""
             return requestProperties.SetItems currentVmStatus
         }
 
+    member private self.AsyncCreateVM (vmTemplateType: VMTemplateType) (request: CreateRequest) =
+        async {
+            let createVmRequest =
+                let imageId = self.GetPropertyNumber(request.Properties, "image_id", __LINE__)
+                let sshKeyId = self.GetPropertyString(request.Properties, "ssh_key_id", __LINE__)
+
+                match vmTemplateType with
+                | Standard ->
+                    let createVmRequestObject =
+                        {|
+                            template_id = self.GetPropertyNumber(request.Properties, "template_id", __LINE__)
+                            image_id = imageId
+                            ssh_key_id = uint64 sshKeyId
+                        |}
+                    self.AsyncSendRequest("/api/v1/vm", HttpMethod.Post, Json.JsonContent.Create createVmRequestObject)
+                | Custom ->
+                    async {
+                        let regionId = self.GetPropertyNumber(request.Properties, "region_id", __LINE__) |> uint64
+                        let! templatesResponse = self.AsyncSendRequest("/api/v1/vm/templates", HttpMethod.Get)
+                        let! templatesResponseBody = templatesResponse.Content.ReadAsStringAsync() |> Async.AwaitTask
+                        let templatesJson = JsonDocument.Parse(templatesResponseBody).RootElement.GetProperty "data"
+                        let customTemplates = templatesJson.GetProperty("custom_template").EnumerateArray()
+                        let pricingId = 
+                            let template =
+                                customTemplates
+                                |> Seq.tryFind 
+                                    (fun templateObject ->
+                                        templateObject.GetProperty("region").GetProperty("id").GetUInt64() = regionId)
+                            match template with
+                            | Some templateObject -> templateObject.GetProperty("id").GetUInt64()
+                            | None -> failwithf "Could not find custom template with region id = %i" regionId
+
+                        let bytesInGigabyte = 1024.0 ** 3
+                        let memoryInBytes = self.GetPropertyNumber(request.Properties, "memory", __LINE__) * bytesInGigabyte
+                        let diskInBytes = self.GetPropertyNumber(request.Properties, "disk", __LINE__) * bytesInGigabyte
+                        let customVmOrderObject =
+                            {|
+                                pricing_id = pricingId
+                                cpu = self.GetPropertyNumber(request.Properties, "cpu", __LINE__)
+                                memory = memoryInBytes
+                                disk = diskInBytes
+                                disk_type = self.GetPropertyString(request.Properties, "disk_type", __LINE__)
+                                disk_interface = self.GetPropertyString(request.Properties, "disk_interface", __LINE__)
+                                image_id = imageId
+                                ssh_key_id = uint64 sshKeyId
+                            |}
+                        return! 
+                            self.AsyncSendRequest(
+                                "/api/v1/vm/custom-template",
+                                HttpMethod.Post,
+                                Json.JsonContent.Create customVmOrderObject
+                            )
+                    }
+
+            let! response = createVmRequest
+            let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+            let vmStatus = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
+            let vmId = vmStatus.GetProperty("id").GetUInt64()
+                
+            // Send invoice via Tg
+            let! invoiceResponse = self.AsyncSendRequest($"/api/v1/vm/{vmId}/renew?method=lightning", HttpMethod.Get)
+            let! invoiceResponseBody = invoiceResponse.Content.ReadAsStringAsync() |> Async.AwaitTask
+            let invoiceData = JsonDocument.Parse(invoiceResponseBody).RootElement.GetProperty "data"
+            let paymentId = invoiceData.GetProperty("id").GetString()
+            let invoice = invoiceData.GetProperty("data").GetProperty("lightning").GetString()
+            let amount = invoiceData.GetProperty("amount").GetUInt64()
+            let tgMessage = $"[Automated Message]
+    Invoice for VM '{request.Name}' ({amount} sats):"
+            let tgMessageWithInvoice = invoice
+
+            let sendTgScriptPath = 
+                IO.Path.Combine(Environment.CurrentDirectory, "..", "TravelBudsFrontend", "scripts", "sendTelegramMessage.fsx")
+            for message in [ tgMessage; tgMessageWithInvoice ] do
+                let sendTgResult =
+                    Execute(
+                        { ProcessDetails.Command = "dotnet"; Arguments = $"fsi {sendTgScriptPath} \"{message}\"" }, 
+                        Echo.Off
+                    )
+                match sendTgResult.Result with
+                | Error (errorCode, output) -> 
+                    return failwith $"""Sending Telegram message with invoice failed with code {errorCode}.
+    STDOUT: {output.StdOut}
+    STDERR: {output.StdErr}
+    Working directory: {Environment.CurrentDirectory}
+    """
+                | _ -> ()
+                
+            do!
+                self.AsyncWaitForPayment
+                    (TimeSpan.FromMinutes 10.0)
+                    (TimeSpan.FromSeconds 5.0)
+                    paymentId
+            do!
+                self.AsyncWaitForVMToBeRunning
+                    (TimeSpan.FromMinutes 5.0)
+                    (TimeSpan.FromSeconds 5.0)
+                    vmId
+
+            let! currentVmStatus = self.AsyncGetVMStatus vmId
+            let updatedProperties = request.Properties.SetItems currentVmStatus
+            return CreateResponse(Id = string vmId, Properties = updatedProperties)
+        }
+
     override self.GetSchema (request: GetSchemaRequest, ct: CancellationToken): Task<GetSchemaResponse> =
         let sshKeyProperties = 
             """{
@@ -237,21 +345,10 @@ Response: {responseBody}"""
                                 }
             """
 
-        let vmInputProperties = 
-            sprintf
-                """{
-%s,
-                                "template_id": {
-                                    "type": "number",
-                                    "description": "VM template Id",
-                                    "language": {
-                                        "csharp": { 
-                                            "name": "TemplateId"
-                                        }
-                                    }
-                                },
+        let vmImageIdProperty =
+            """
                                 "image_id": {
-                                    "type": "number",
+                                    "type": "integer",
                                     "description": "VM image Id",
                                     "language": {
                                         "csharp": { 
@@ -259,8 +356,25 @@ Response: {responseBody}"""
                                         }
                                     }
                                 }
+            """
+
+        let vmInputProperties = 
+            sprintf
+                """{
+%s,
+%s,
+                                "template_id": {
+                                    "type": "integer",
+                                    "description": "VM template Id",
+                                    "language": {
+                                        "csharp": { 
+                                            "name": "TemplateId"
+                                        }
+                                    }
+                                }
                 }"""
                 vmSshKeyProperty
+                vmImageIdProperty
 
         let vmProperties = 
             sprintf
@@ -285,12 +399,68 @@ Response: {responseBody}"""
                 }"""
                 vmSshKeyProperty
 
+        let customVmProperties = vmProperties
+
+        let customVmInputProperties = 
+            sprintf
+                """{
+%s,
+%s,
+                                "region_id": {
+                                    "type": "integer",
+                                    "description": "VM region Id",
+                                    "language": {
+                                        "csharp": { 
+                                            "name": "RegionId"
+                                        }
+                                    }
+                                },
+                                "cpu": {
+                                    "type": "integer",
+                                    "description": "Number of CPU cores"
+                                },
+                                "memory": {
+                                    "type": "integer",
+                                    "description": "Memory in Gigabytes"
+                                },
+                                "disk": {
+                                    "type": "integer",
+                                    "description": "Disk size in Gigabytes"
+                                },
+                                "disk_type": {
+                                    "type": "string",
+                                    "default": "ssd",
+                                    "description": "Disk type (ssd or hdd)",
+                                    "language": {
+                                        "csharp": { 
+                                            "name": "DiskType"
+                                        }
+                                    }
+                                },
+                                "disk_interface": {
+                                    "type": "string",
+                                    "default": "pcie",
+                                    "description": "'sata' | 'scsi' | 'pcie'",
+                                    "language": {
+                                        "csharp": { 
+                                            "name": "DiskInterface"
+                                        }
+                                    }
+                                }
+                }"""
+                vmSshKeyProperty
+                vmImageIdProperty
+
         let schema =
             sprintf
                 """{
                     "name": "lnvps",
                     "version": "%s",
                     "resources": {
+                        "%s" : {
+                            "properties": %s,
+                            "inputProperties": %s
+                        },
                         "%s" : {
                             "properties": %s,
                             "inputProperties": %s
@@ -310,6 +480,9 @@ Response: {responseBody}"""
                 vmResourceName
                 vmProperties
                 vmInputProperties
+                customVmResourceName
+                customVmProperties
+                customVmInputProperties
         
         Task.FromResult <| GetSchemaResponse(Schema = schema)
 
@@ -355,62 +528,9 @@ Response: {responseBody}"""
                 let id = json.GetProperty("id").GetUInt64().ToString()
                 return CreateResponse(Id = id, Properties = request.Properties)
             elif request.Type = vmResourceName then
-                let createVmRequestObject =
-                    let templateId = self.GetPropertyNumber(request.Properties, "template_id", __LINE__)
-                    let imageId = self.GetPropertyNumber(request.Properties, "image_id", __LINE__)
-                    let sshKeyId = self.GetPropertyString(request.Properties, "ssh_key_id", __LINE__)
-                    {|
-                        template_id = templateId
-                        image_id = imageId
-                        ssh_key_id = uint64 sshKeyId
-                    |}
-                let! response = self.AsyncSendRequest("/api/v1/vm", HttpMethod.Post, Json.JsonContent.Create createVmRequestObject)
-                let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                let vmStatus = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
-                let vmId = vmStatus.GetProperty("id").GetUInt64()
-                
-                // Send invoice via Tg
-                let! invoiceResponse = self.AsyncSendRequest($"/api/v1/vm/{vmId}/renew?method=lightning", HttpMethod.Get)
-                let! invoiceResponseBody = invoiceResponse.Content.ReadAsStringAsync() |> Async.AwaitTask
-                let invoiceData = JsonDocument.Parse(invoiceResponseBody).RootElement.GetProperty "data"
-                let paymentId = invoiceData.GetProperty("id").GetString()
-                let invoice = invoiceData.GetProperty("data").GetProperty("lightning").GetString()
-                let amount = invoiceData.GetProperty("amount").GetUInt64()
-                let tgMessage = $"[Automated Message]
-Invoice for VM '{request.Name}' ({amount} sats):"
-                let tgMessageWithInvoice = invoice
-
-                let sendTgScriptPath = 
-                    IO.Path.Combine(Environment.CurrentDirectory, "..", "TravelBudsFrontend", "scripts", "sendTelegramMessage.fsx")
-                for message in [ tgMessage; tgMessageWithInvoice ] do
-                    let sendTgResult =
-                        Execute(
-                            { ProcessDetails.Command = "dotnet"; Arguments = $"fsi {sendTgScriptPath} \"{message}\"" }, 
-                            Echo.Off
-                        )
-                    match sendTgResult.Result with
-                    | Error (errorCode, output) -> 
-                        return failwith $"""Sending Telegram message with invoice failed with code {errorCode}.
-STDOUT: {output.StdOut}
-STDERR: {output.StdErr}
-Working directory: {Environment.CurrentDirectory}
-"""
-                    | _ -> ()
-                
-                do!
-                    self.AsyncWaitForPayment
-                        (TimeSpan.FromMinutes 10.0)
-                        (TimeSpan.FromSeconds 5.0)
-                        paymentId
-                do!
-                    self.AsyncWaitForVMToBeRunning
-                        (TimeSpan.FromMinutes 5.0)
-                        (TimeSpan.FromSeconds 5.0)
-                        vmId
-
-                let! currentVmStatus = self.AsyncGetVMStatus vmId
-                let updatedProperties = request.Properties.SetItems currentVmStatus
-                return CreateResponse(Id = string vmId, Properties = updatedProperties)
+                return! self.AsyncCreateVM VMTemplateType.Standard request
+            elif request.Type = customVmResourceName then
+                return! self.AsyncCreateVM VMTemplateType.Custom request
             else
                 return failwith $"Unknown resource type '{request.Type}'"
         }
