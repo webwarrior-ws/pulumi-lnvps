@@ -498,7 +498,7 @@ Response: {responseBody}"""
         Task.FromResult <| ConfigureResponse()
 
     override self.Check (request: CheckRequest, ct: CancellationToken): Task<CheckResponse> = 
-        if request.Type = sshKeyResourceName || request.Type = vmResourceName then
+        if request.Type = sshKeyResourceName || request.Type = vmResourceName || request.Type = customVmResourceName then
             Task.FromResult <| CheckResponse(Inputs = request.NewInputs)
         else
             failwith $"Unknown resource type '{request.Type}'"
@@ -510,7 +510,7 @@ Response: {responseBody}"""
 
         if request.Type = sshKeyResourceName then
             Task.FromResult <| DiffResponse(Changes = hasChanges, Replaces = changedPropertiesNames)
-        elif request.Type = vmResourceName then
+        elif request.Type = vmResourceName || request.Type = customVmResourceName  then
             Task.FromResult <| DiffResponse(Changes = hasChanges, Diffs = changedPropertiesNames)
         else
             failwith $"Unknown resource type '{request.Type}'"
@@ -542,7 +542,7 @@ Response: {responseBody}"""
         async {
             if request.Type = sshKeyResourceName then
                 return failwith $"Resource {sshKeyResourceName} does not support updating."
-            elif request.Type = vmResourceName then
+            elif request.Type = vmResourceName || request.Type = customVmResourceName  then
                 let properties = request.Olds.SetItems request.News
                 let! updatedProperties = self.AsyncUpdateVM (uint64 request.Id) properties
                 return UpdateResponse(Properties = updatedProperties)
@@ -559,6 +559,8 @@ Response: {responseBody}"""
                 return failwith $"Resource {sshKeyResourceName} does not support deletion."
             elif request.Type = vmResourceName then
                 return failwith $"Resource {vmResourceName} does not support deletion."
+            elif request.Type = customVmResourceName then
+                return failwith $"Resource {customVmResourceName} does not support deletion."
             else
                 return failwith $"Unknown resource type '{request.Type}'"
         }
@@ -581,7 +583,7 @@ Response: {responseBody}"""
                     return ReadResponse(Id = request.Id, Properties = properties, Inputs = request.Inputs)
                 | None ->
                     return failwith $"{sshKeyResourceName} with Id={request.Id} not found"
-            elif request.Type = vmResourceName then
+            elif request.Type = vmResourceName || request.Type = customVmResourceName  then
                 let! vmProperties = self.AsyncGetVMStatus (uint64 request.Id)
                 return ReadResponse(Id = request.Id, Properties = vmProperties, Inputs = request.Inputs)
             else
