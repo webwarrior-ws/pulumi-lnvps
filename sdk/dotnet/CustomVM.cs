@@ -9,8 +9,8 @@ using Pulumi.Serialization;
 
 namespace Pulumi.Lnvps
 {
-    [LnvpsResourceType("lnvps:index:VM")]
-    public partial class VM : global::Pulumi.CustomResource
+    [LnvpsResourceType("lnvps:index:CustomVM")]
+    public partial class CustomVM : global::Pulumi.CustomResource
     {
         /// <summary>
         /// VM IP addresses.
@@ -32,19 +32,19 @@ namespace Pulumi.Lnvps
 
 
         /// <summary>
-        /// Create a VM resource with the given unique name, arguments, and options.
+        /// Create a CustomVM resource with the given unique name, arguments, and options.
         /// </summary>
         ///
         /// <param name="name">The unique name of the resource</param>
         /// <param name="args">The arguments used to populate this resource's properties</param>
         /// <param name="options">A bag of options that control this resource's behavior</param>
-        public VM(string name, VMArgs? args = null, CustomResourceOptions? options = null)
-            : base("lnvps:index:VM", name, args ?? new VMArgs(), MakeResourceOptions(options, ""))
+        public CustomVM(string name, CustomVMArgs? args = null, CustomResourceOptions? options = null)
+            : base("lnvps:index:CustomVM", name, args ?? new CustomVMArgs(), MakeResourceOptions(options, ""))
         {
         }
 
-        private VM(string name, Input<string> id, CustomResourceOptions? options = null)
-            : base("lnvps:index:VM", name, null, MakeResourceOptions(options, id))
+        private CustomVM(string name, Input<string> id, CustomResourceOptions? options = null)
+            : base("lnvps:index:CustomVM", name, null, MakeResourceOptions(options, id))
         {
         }
 
@@ -60,21 +60,45 @@ namespace Pulumi.Lnvps
             return merged;
         }
         /// <summary>
-        /// Get an existing VM resource's state with the given name, ID, and optional extra
+        /// Get an existing CustomVM resource's state with the given name, ID, and optional extra
         /// properties used to qualify the lookup.
         /// </summary>
         ///
         /// <param name="name">The unique name of the resulting resource.</param>
         /// <param name="id">The unique provider ID of the resource to lookup.</param>
         /// <param name="options">A bag of options that control this resource's behavior</param>
-        public static VM Get(string name, Input<string> id, CustomResourceOptions? options = null)
+        public static CustomVM Get(string name, Input<string> id, CustomResourceOptions? options = null)
         {
-            return new VM(name, id, options);
+            return new CustomVM(name, id, options);
         }
     }
 
-    public sealed class VMArgs : global::Pulumi.ResourceArgs
+    public sealed class CustomVMArgs : global::Pulumi.ResourceArgs
     {
+        /// <summary>
+        /// Number of CPU cores
+        /// </summary>
+        [Input("cpu")]
+        public Input<int>? Cpu { get; set; }
+
+        /// <summary>
+        /// Disk size in bytes
+        /// </summary>
+        [Input("disk")]
+        public Input<int>? Disk { get; set; }
+
+        /// <summary>
+        /// 'sata' | 'scsi' | 'pcie'
+        /// </summary>
+        [Input("disk_interface")]
+        public Input<string>? DiskInterface { get; set; }
+
+        /// <summary>
+        /// Disk type (ssd or hdd)
+        /// </summary>
+        [Input("disk_type")]
+        public Input<string>? DiskType { get; set; }
+
         /// <summary>
         /// VM image Id
         /// </summary>
@@ -82,20 +106,28 @@ namespace Pulumi.Lnvps
         public Input<int>? ImageId { get; set; }
 
         /// <summary>
+        /// Memory in bytes
+        /// </summary>
+        [Input("memory")]
+        public Input<int>? Memory { get; set; }
+
+        /// <summary>
+        /// VM region Id
+        /// </summary>
+        [Input("region_id")]
+        public Input<int>? RegionId { get; set; }
+
+        /// <summary>
         /// ID of SSH key installed on VM.
         /// </summary>
         [Input("ssh_key_id")]
         public Input<string>? SshKeyId { get; set; }
 
-        /// <summary>
-        /// VM template Id
-        /// </summary>
-        [Input("template_id")]
-        public Input<int>? TemplateId { get; set; }
-
-        public VMArgs()
+        public CustomVMArgs()
         {
+            DiskInterface = "pcie";
+            DiskType = "ssd";
         }
-        public static new VMArgs Empty => new VMArgs();
+        public static new CustomVMArgs Empty => new CustomVMArgs();
     }
 }
