@@ -19,6 +19,19 @@ open Nostr.Client.Messages
 open Nostr.Client.Keys
 open Fsdk.Process
 
+type RequestFailed(method, relativeUrl, contentString, statusCode, responseBody) =
+    inherit Exception($"Request {method} {relativeUrl} {contentString} failed with code {statusCode}.
+Response: {responseBody}")
+
+    member self.Method = method
+    member self.RelativeUrl = relativeUrl
+    member self.ContentString = contentString
+    member self.StatusCode = statusCode
+    member self.ResponseBody = responseBody
+
+type EmailVerificationRequired(message) =
+    inherit Exception(message)
+
 type VMTemplateType =
     | Standard
     | Custom
@@ -106,8 +119,7 @@ type LNVPSProvider(nostrPrivateKey: string) =
                     match content with
                     | Some jsonContent -> $"(content = {jsonContent.Value})"
                     | None -> String.Empty
-                return failwith $"""Request {method} {relativeUrl} {contentString} failed with code {response.StatusCode}.
-Response: {responseBody}"""
+                return raise <| RequestFailed(method, relativeUrl, contentString, response.StatusCode, responseBody)
         }
     
     member private self.AsyncGetVMStatus(vmId: uint64) =
@@ -249,12 +261,23 @@ Response: {responseBody}"""
                                 image_id = imageId
                                 ssh_key_id = uint64 sshKeyId
                             |}
-                        return! 
+                        let createCustomTemplateVmRequest =
                             self.AsyncSendRequest(
-                                "/api/v1/vm/custom-template",
-                                HttpMethod.Post,
-                                Json.JsonContent.Create customVmOrderObject
-                            )
+                                    "/api/v1/vm/custom-template",
+                                    HttpMethod.Post,
+                                    Json.JsonContent.Create customVmOrderObject
+                                )
+                        try
+                            return! createCustomTemplateVmRequest
+                        with
+                        | :? RequestFailed as exn when 
+                            JsonDocument.Parse(exn.ResponseBody)
+                                .RootElement
+                                .GetProperty("error")
+                                .GetString()
+                                .Contains("Email verification is required") ->
+                            let errorMessage = "Email verification is required before creating a VM from custom template."
+                            return raise <| EmailVerificationRequired errorMessage
                     }
 
             let! response = createVmRequest
