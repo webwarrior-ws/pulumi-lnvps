@@ -46,6 +46,8 @@ type LNVPSProvider(nostrPrivateKey: string) =
 
     let httpClient = new HttpClient()
 
+    let email = Environment.GetEnvironmentVariable LNVPSProvider.EmailEnvVarName
+
     // Provider has to advertise its version when outputting schema, e.g. for SDK generation.
     // In pulumi-lnvps, we have Pulumi generate the terraform bridge, and it automatically pulls version from the tag.
     // Use sdk/dotnet/version.txt as source of version number.
@@ -60,6 +62,7 @@ type LNVPSProvider(nostrPrivateKey: string) =
         reader.ReadToEnd().Trim()
 
     static member val NostrPrivateKeyEnvVarName = "LNVPS_NOSTR_PRIV_KEY"
+    static member val EmailEnvVarName = "LNVPS_EMAIL"
 
     interface IDisposable with
         override self.Dispose (): unit = 
@@ -276,7 +279,20 @@ type LNVPSProvider(nostrPrivateKey: string) =
                                 .GetProperty("error")
                                 .GetString()
                                 .Contains("Email verification is required") ->
-                            let errorMessage = "Email verification is required before creating a VM from custom template."
+                            let! accountInfoResponse = self.AsyncSendRequest("/api/v1/account", HttpMethod.Get)
+                            let! accountResponseBody = accountInfoResponse.Content.ReadAsStringAsync() |> Async.AwaitTask
+                            let accountJson = Nodes.JsonNode.Parse(accountResponseBody).["data"]
+            
+                            accountJson.["email"] <- Nodes.JsonValue.Create email
+
+                            let! _ =
+                                self.AsyncSendRequest(
+                                    "/api/v1/account", 
+                                    HttpMethod.Patch, 
+                                    Json.JsonContent.Create accountJson
+                                )
+                            
+                            let errorMessage = $"Email verification is needed, please verify it checking inbox of {email} and retry deploy after that"
                             return raise <| EmailVerificationRequired errorMessage
                     }
 
@@ -518,6 +534,8 @@ type LNVPSProvider(nostrPrivateKey: string) =
     override self.Configure (request: ConfigureRequest, ct: CancellationToken): Task<ConfigureResponse> = 
         if String.IsNullOrWhiteSpace nostrPrivateKey then
             failwith $"Environment variable {LNVPSProvider.NostrPrivateKeyEnvVarName} not provided."
+        if String.IsNullOrWhiteSpace email then
+            failwith $"Environment variable {LNVPSProvider.EmailEnvVarName} not provided."
         Task.FromResult <| ConfigureResponse()
 
     override self.Check (request: CheckRequest, ct: CancellationToken): Task<CheckResponse> = 
