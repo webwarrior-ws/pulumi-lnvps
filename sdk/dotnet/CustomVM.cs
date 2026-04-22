@@ -103,7 +103,7 @@ namespace Pulumi.Lnvps
         /// VM image Id
         /// </summary>
         [Input("image_id")]
-        public Input<int>? ImageId { get; set; }
+        public Input<Pulumi.Lnvps.ImageId>? ImageId { get; set; }
 
         /// <summary>
         /// Memory in Gigabytes
@@ -115,7 +115,7 @@ namespace Pulumi.Lnvps
         /// VM region Id
         /// </summary>
         [Input("region_id")]
-        public Input<int>? RegionId { get; set; }
+        public Input<Pulumi.Lnvps.RegionId>? RegionId { get; set; }
 
         /// <summary>
         /// ID of SSH key installed on VM.

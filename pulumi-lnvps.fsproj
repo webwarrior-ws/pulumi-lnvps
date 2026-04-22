@@ -9,6 +9,7 @@
   <ItemGroup>
     <EmbeddedResource Include="sdk/dotnet/version.txt" />
     <None Include="PulumiPlugin.yaml" />
+    <Compile Include="Constants.fs" />
     <Compile Include="LNVPSProvider.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

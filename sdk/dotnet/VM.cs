@@ -79,7 +79,7 @@ namespace Pulumi.Lnvps
         /// VM image Id
         /// </summary>
         [Input("image_id")]
-        public Input<int>? ImageId { get; set; }
+        public Input<Pulumi.Lnvps.ImageId>? ImageId { get; set; }
 
         /// <summary>
         /// ID of SSH key installed on VM.
@@ -91,7 +91,7 @@ namespace Pulumi.Lnvps
         /// VM template Id
         /// </summary>
         [Input("template_id")]
-        public Input<int>? TemplateId { get; set; }
+        public Input<Pulumi.Lnvps.TemplateId>? TemplateId { get; set; }
 
         public VMArgs()
         {
