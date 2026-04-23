@@ -40,9 +40,9 @@ type VMTemplateType =
 type LnVpsProvider(nostrPrivateKey: string) =
     inherit Pulumi.Experimental.Provider.Provider()
 
-    static let sshKeyResourceName = "LnVps:index:SshKey"
-    static let vmResourceName = "LnVps:index:VM"
-    static let customVmResourceName = "LnVps:index:CustomVM"
+    static let sshKeyResourceName = "lnvps:index:SshKey"
+    static let vmResourceName = "lnvps:index:VM"
+    static let customVmResourceName = "lnvps:index:CustomVM"
     static let apiBaseUrl = "https://api.lnvps.net"
 
     let httpClient = new HttpClient()
@@ -412,7 +412,7 @@ Invoice for renewal {invoiceInfo}:"
                                 }
             """
 
-        let imageIdEnumTypeName = "LnVps:index:imageId"
+        let imageIdEnumTypeName = "lnvps:index:imageId"
         let imageIdEnumValuesArray = 
             let regionValues =
                 Constants.Images
@@ -437,7 +437,7 @@ Invoice for renewal {invoiceInfo}:"
                 """
                 imageIdEnumTypeName
 
-        let templateIdEnumTypeName = "LnVps:index:templateId"
+        let templateIdEnumTypeName = "lnvps:index:templateId"
         let templateIdEnumValuesArray = 
             let regionValues =
                 Constants.Templates
@@ -496,7 +496,7 @@ Invoice for renewal {invoiceInfo}:"
 
         let customVmProperties = vmProperties
 
-        let regionIdEnumTypeName = "LnVps:index:regionId"
+        let regionIdEnumTypeName = "lnvps:index:regionId"
         let regionIdEnumValuesArray = 
             let regionValues =
                 Constants.Regions
@@ -587,7 +587,7 @@ Invoice for renewal {invoiceInfo}:"
         let schema =
             sprintf
                 """{
-                    "name": "LnVps",
+                    "name": "lnvps",
                     "version": "%s",
                     "resources": {
                         "%s" : {

@@ -7,9 +7,9 @@ using System.Collections.Immutable;
 using System.Threading.Tasks;
 using Pulumi.Serialization;
 
-namespace Pulumi.LnVps
+namespace Pulumi.Lnvps
 {
-    [LnVpsResourceType("LnVps:index:VM")]
+    [LnvpsResourceType("lnvps:index:VM")]
     public partial class VM : global::Pulumi.CustomResource
     {
         /// <summary>
@@ -39,12 +39,12 @@ namespace Pulumi.LnVps
         /// <param name="args">The arguments used to populate this resource's properties</param>
         /// <param name="options">A bag of options that control this resource's behavior</param>
         public VM(string name, VMArgs? args = null, CustomResourceOptions? options = null)
-            : base("LnVps:index:VM", name, args ?? new VMArgs(), MakeResourceOptions(options, ""))
+            : base("lnvps:index:VM", name, args ?? new VMArgs(), MakeResourceOptions(options, ""))
         {
         }
 
         private VM(string name, Input<string> id, CustomResourceOptions? options = null)
-            : base("LnVps:index:VM", name, null, MakeResourceOptions(options, id))
+            : base("lnvps:index:VM", name, null, MakeResourceOptions(options, id))
         {
         }
 
@@ -79,7 +79,7 @@ namespace Pulumi.LnVps
         /// VM image Id
         /// </summary>
         [Input("image_id")]
-        public Input<Pulumi.LnVps.ImageId>? ImageId { get; set; }
+        public Input<Pulumi.Lnvps.ImageId>? ImageId { get; set; }
 
         /// <summary>
         /// ID of SSH key installed on VM.
@@ -91,7 +91,7 @@ namespace Pulumi.LnVps
         /// VM template Id
         /// </summary>
         [Input("template_id")]
-        public Input<Pulumi.LnVps.TemplateId>? TemplateId { get; set; }
+        public Input<Pulumi.Lnvps.TemplateId>? TemplateId { get; set; }
 
         public VMArgs()
         {
