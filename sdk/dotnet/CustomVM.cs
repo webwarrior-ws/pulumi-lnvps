@@ -7,9 +7,9 @@ using System.Collections.Immutable;
 using System.Threading.Tasks;
 using Pulumi.Serialization;
 
-namespace Pulumi.Lnvps
+namespace Pulumi.LnVps
 {
-    [LnvpsResourceType("lnvps:index:CustomVM")]
+    [LnVpsResourceType("LnVps:index:CustomVM")]
     public partial class CustomVM : global::Pulumi.CustomResource
     {
         /// <summary>
@@ -39,12 +39,12 @@ namespace Pulumi.Lnvps
         /// <param name="args">The arguments used to populate this resource's properties</param>
         /// <param name="options">A bag of options that control this resource's behavior</param>
         public CustomVM(string name, CustomVMArgs? args = null, CustomResourceOptions? options = null)
-            : base("lnvps:index:CustomVM", name, args ?? new CustomVMArgs(), MakeResourceOptions(options, ""))
+            : base("LnVps:index:CustomVM", name, args ?? new CustomVMArgs(), MakeResourceOptions(options, ""))
         {
         }
 
         private CustomVM(string name, Input<string> id, CustomResourceOptions? options = null)
-            : base("lnvps:index:CustomVM", name, null, MakeResourceOptions(options, id))
+            : base("LnVps:index:CustomVM", name, null, MakeResourceOptions(options, id))
         {
         }
 
@@ -103,7 +103,7 @@ namespace Pulumi.Lnvps
         /// VM image Id
         /// </summary>
         [Input("image_id")]
-        public Input<Pulumi.Lnvps.ImageId>? ImageId { get; set; }
+        public Input<Pulumi.LnVps.ImageId>? ImageId { get; set; }
 
         /// <summary>
         /// Memory in Gigabytes
@@ -115,7 +115,7 @@ namespace Pulumi.Lnvps
         /// VM region Id
         /// </summary>
         [Input("region_id")]
-        public Input<Pulumi.Lnvps.RegionId>? RegionId { get; set; }
+        public Input<Pulumi.LnVps.RegionId>? RegionId { get; set; }
 
         /// <summary>
         /// ID of SSH key installed on VM.

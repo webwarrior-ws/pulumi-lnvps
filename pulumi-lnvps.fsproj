@@ -10,7 +10,7 @@
     <EmbeddedResource Include="sdk/dotnet/version.txt" />
     <None Include="PulumiPlugin.yaml" />
     <Compile Include="Constants.fs" />
-    <Compile Include="LNVPSProvider.fs" />
+    <Compile Include="LnVpsProvider.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

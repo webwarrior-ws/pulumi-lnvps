@@ -7,9 +7,9 @@ using System.Collections.Immutable;
 using System.Threading.Tasks;
 using Pulumi.Serialization;
 
-namespace Pulumi.Lnvps
+namespace Pulumi.LnVps
 {
-    [LnvpsResourceType("lnvps:index:SshKey")]
+    [LnVpsResourceType("LnVps:index:SshKey")]
     public partial class SshKey : global::Pulumi.CustomResource
     {
         /// <summary>
@@ -27,12 +27,12 @@ namespace Pulumi.Lnvps
         /// <param name="args">The arguments used to populate this resource's properties</param>
         /// <param name="options">A bag of options that control this resource's behavior</param>
         public SshKey(string name, SshKeyArgs? args = null, CustomResourceOptions? options = null)
-            : base("lnvps:index:SshKey", name, args ?? new SshKeyArgs(), MakeResourceOptions(options, ""))
+            : base("LnVps:index:SshKey", name, args ?? new SshKeyArgs(), MakeResourceOptions(options, ""))
         {
         }
 
         private SshKey(string name, Input<string> id, CustomResourceOptions? options = null)
-            : base("lnvps:index:SshKey", name, null, MakeResourceOptions(options, id))
+            : base("LnVps:index:SshKey", name, null, MakeResourceOptions(options, id))
         {
         }
 

@@ -5,7 +5,7 @@ using System;
 using System.ComponentModel;
 using Pulumi;
 
-namespace Pulumi.Lnvps
+namespace Pulumi.LnVps
 {
     public enum ImageId
     {

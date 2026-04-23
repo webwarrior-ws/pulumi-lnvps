@@ -1,4 +1,4 @@
-﻿module Pulumi.LNVPS.Constants
+﻿module Pulumi.LnVps.Constants
 
 /// IDs of images
 let Images =

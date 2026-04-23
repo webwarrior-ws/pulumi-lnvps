@@ -7,9 +7,9 @@ using System.Collections.Immutable;
 using System.Threading.Tasks;
 using Pulumi.Serialization;
 
-namespace Pulumi.Lnvps
+namespace Pulumi.LnVps
 {
-    [LnvpsResourceType("pulumi:providers:lnvps")]
+    [LnVpsResourceType("pulumi:providers:LnVps")]
     public partial class Provider : global::Pulumi.ProviderResource
     {
         /// <summary>
@@ -20,7 +20,7 @@ namespace Pulumi.Lnvps
         /// <param name="args">The arguments used to populate this resource's properties</param>
         /// <param name="options">A bag of options that control this resource's behavior</param>
         public Provider(string name, ProviderArgs? args = null, CustomResourceOptions? options = null)
-            : base("lnvps", name, args ?? new ProviderArgs(), MakeResourceOptions(options, ""))
+            : base("LnVps", name, args ?? new ProviderArgs(), MakeResourceOptions(options, ""))
         {
         }
 
