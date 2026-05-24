@@ -52,8 +52,6 @@ type LnVpsProvider(nostrPrivateKey: string) =
 
     let email = Environment.GetEnvironmentVariable LnVpsProvider.EmailEnvVarName
 
-    member val SendMessageScriptPath: Option<FileInfo> = None with get, set
-
     // Provider has to advertise its version when outputting schema, e.g. for SDK generation.
     // In pulumi-lnvps, we have Pulumi generate the terraform bridge, and it automatically pulls version from the tag.
     // Use sdk/dotnet/version.txt as source of version number.
@@ -360,11 +358,10 @@ Invoice for renewal {invoiceInfo}:"
                 
             let! invoiceData = self.AsyncGetInvoice vmId
             let paymentId = invoiceData.GetProperty("id").GetString()
-            match self.SendMessageScriptPath with
-            | Some messageScriptPath ->
-                do! self.AsyncSendInvoiceViaTelegram messageScriptPath invoiceData request.Name None
-            | None ->
-                failwith "SendMessageScriptPath is None"
+            let sendTgScriptFile = 
+                Path.Combine(Environment.CurrentDirectory, "..", "TravelBudsFrontend", "scripts", "sendTelegramMessage.fsx")
+                |> FileInfo
+            do! self.AsyncSendInvoiceViaTelegram sendTgScriptFile invoiceData request.Name None
                 
             do!
                 self.AsyncWaitForPayment
@@ -613,12 +610,6 @@ Invoice for renewal {invoiceInfo}:"
                         }
                     },
                     "provider": {
-                        "inputProperties": {
-                            "sendMessageScriptPath": {
-                                "type": "string"
-                            }
-                        },
-                        "requiredInputs": [ "sendMessageScriptPath" ]
                     },
                     "types": %s
                 }"""
@@ -647,20 +638,6 @@ Invoice for renewal {invoiceInfo}:"
             failwith $"Environment variable {LnVpsProvider.NostrPrivateKeyEnvVarName} not provided."
         if String.IsNullOrWhiteSpace email then
             failwith $"Environment variable {LnVpsProvider.EmailEnvVarName} not provided."
-
-        match request.Args.TryGetValue "sendMessageScriptPath" with
-        | true, value ->
-            match value.TryGetString() with
-            | true, path -> 
-                if not <| File.Exists path then
-                    failwithf "Script file %s does not exist" path
-                self.SendMessageScriptPath <- Some <| FileInfo path
-            | false, _ -> ()
-        | false, _ -> ()
-
-        if self.SendMessageScriptPath.IsNone then
-            failwith "sendMessageScriptPath is required"
-
         Task.FromResult <| ConfigureResponse()
 
     override self.Check (request: CheckRequest, ct: CancellationToken): Task<CheckResponse> = 
