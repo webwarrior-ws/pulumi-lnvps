@@ -69,7 +69,7 @@ type CustomHttpClient(retryCount: int) =
                 with
                 | ex when IsConnectionTimedOutException ex ->
                     if currentAttempt <= retryCount then
-                        printfn $"[CustomHttpClient] Connection timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
+                        eprintfn $"[CustomHttpClient] Connection for request '{request.ToString()}' timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
                         do! Async.Sleep (TimeSpan.FromSeconds 5)
                         return! sendWithRetry request token (currentAttempt + 1)
                     else
