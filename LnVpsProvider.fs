@@ -10,7 +10,7 @@ open System.Net.Http
 open System.Text.Json
 open System.Threading
 open System.Threading.Tasks
-open System.Web
+open System.Net.Sockets
 
 open Pulumi
 open Pulumi.Experimental
@@ -37,6 +37,54 @@ type VMTemplateType =
     | Standard
     | Custom
 
+type CustomHttpClient(retryCount: int) =
+    let httpClient = new HttpClient()
+    // Disable HttpClient's built-in timeout so that Pulumi's CustomResourceOptions timeout
+    // (passed via CancellationToken) is the only one that controls cancellation.
+    do httpClient.Timeout <- Threading.Timeout.InfiniteTimeSpan
+
+    static let IsConnectionTimedOutException (ex: Exception) =
+        let rec checkException (e: Exception) =
+            if isNull e then
+                false
+            else
+                match e with
+                | :? HttpRequestException as hre ->
+                    match hre.InnerException with
+                    | :? SocketException as se ->
+                        se.SocketErrorCode = SocketError.TimedOut
+                        || se.SocketErrorCode = SocketError.ConnectionRefused
+                    | _ -> checkException hre.InnerException
+                | _ -> checkException e.InnerException
+        checkException ex
+
+    member _.DefaultRequestHeaders = httpClient.DefaultRequestHeaders
+
+    member _.SendAsync(request: HttpRequestMessage, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
+        let rec sendWithRetry (request: HttpRequestMessage) (token: CancellationToken) (currentAttempt: int) : Async<HttpResponseMessage> =
+            async {
+                try
+                    let! response = httpClient.SendAsync(request, token) |> Async.AwaitTask
+                    return response
+                with
+                | ex when IsConnectionTimedOutException ex ->
+                    if currentAttempt <= retryCount then
+                        printfn $"[CustomHttpClient] Connection timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
+                        do! Async.Sleep (TimeSpan.FromSeconds 5)
+                        return! sendWithRetry request token (currentAttempt + 1)
+                    else
+                        return raise ex
+            }
+        async {
+            let token = defaultArg cancellationToken CancellationToken.None
+            return! sendWithRetry request token 1
+        }
+
+    member _.Dispose() = (httpClient :> IDisposable).Dispose()
+
+    interface IDisposable with
+        member this.Dispose() = this.Dispose()
+
 type LnVpsProvider(nostrPrivateKey: string) =
     inherit Pulumi.Experimental.Provider.Provider()
 
@@ -45,10 +93,7 @@ type LnVpsProvider(nostrPrivateKey: string) =
     static let customVmResourceName = "lnvps:index:CustomVM"
     static let apiBaseUrl = "https://api.lnvps.net"
 
-    let httpClient = new HttpClient()
-    // Disable HttpClient's built-in timeout so that Pulumi's CustomResourceOptions timeout
-    // (passed via CancellationToken) is the only one that controls cancellation.
-    do httpClient.Timeout <- Threading.Timeout.InfiniteTimeSpan
+    let httpClient = new CustomHttpClient(7)
 
     let email = Environment.GetEnvironmentVariable LnVpsProvider.EmailEnvVarName
 
@@ -119,8 +164,8 @@ type LnVpsProvider(nostrPrivateKey: string) =
 
             let! response =
                 match ct with
-                | Some token -> httpClient.SendAsync(message, token) |> Async.AwaitTask
-                | None -> httpClient.SendAsync message |> Async.AwaitTask
+                | Some token -> httpClient.SendAsync(message, token)
+                | None -> httpClient.SendAsync(message)
             if response.IsSuccessStatusCode then
                 return response
             else
