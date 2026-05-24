@@ -46,6 +46,9 @@ type LnVpsProvider(nostrPrivateKey: string) =
     static let apiBaseUrl = "https://api.lnvps.net"
 
     let httpClient = new HttpClient()
+    // Disable HttpClient's built-in timeout so that Pulumi's CustomResourceOptions timeout
+    // (passed via CancellationToken) is the only one that controls cancellation.
+    do httpClient.Timeout <- Threading.Timeout.InfiniteTimeSpan
 
     let email = Environment.GetEnvironmentVariable LnVpsProvider.EmailEnvVarName
 
@@ -95,7 +98,7 @@ type LnVpsProvider(nostrPrivateKey: string) =
             | false, _ -> failwith $"Value of property {name} ({propertyValue}) is not a number{lineNumberString}"
         | false, _ -> failwith $"No {name} property in dictionary{lineNumberString}"
 
-    member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, ?content: Json.JsonContent) =
+    member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, ?content: Json.JsonContent, ?ct: CancellationToken) =
         async {
             let absoluteUrl = apiBaseUrl + relativeUrl
             let event = NostrEvent(
@@ -116,7 +119,10 @@ type LnVpsProvider(nostrPrivateKey: string) =
             | Some jsonContent -> message.Content <- jsonContent
             | None -> ()
 
-            let! response = httpClient.SendAsync message |> Async.AwaitTask
+            let! response =
+                match ct with
+                | Some token -> httpClient.SendAsync(message, token) |> Async.AwaitTask
+                | None -> httpClient.SendAsync message |> Async.AwaitTask
             if response.IsSuccessStatusCode then
                 return response
             else
@@ -675,18 +681,24 @@ Invoice for renewal {invoiceInfo}:"
         else
             failwith $"Unknown resource type '{request.Type}'"
 
-    member private self.AsyncCreate(request: CreateRequest): Async<CreateResponse> =
+    member private self.AsyncCreateSshKey(request: CreateRequest) (ct: CancellationToken): Async<CreateResponse> =
+        async {
+            let createSshKey =
+                let name = self.GetPropertyString(request.Properties, "name", __LINE__)
+                let key_data = self.GetPropertyString(request.Properties, "key_data", __LINE__)
+                {| name = name; key_data = key_data |}
+
+            let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Post, Json.JsonContent.Create createSshKey, ct)
+            let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+            let json = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
+            let id = json.GetProperty("id").GetUInt64().ToString()
+            return CreateResponse(Id = id, Properties = request.Properties)
+        }
+
+    member private self.AsyncCreate(request: CreateRequest) (ct: CancellationToken): Async<CreateResponse> =
         async {
             if request.Type = sshKeyResourceName then
-                let createSshKey = 
-                    let name = self.GetPropertyString(request.Properties, "name", __LINE__)
-                    let key_data = self.GetPropertyString(request.Properties, "key_data", __LINE__)
-                    {| name = name; key_data = key_data |}
-                let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Post, Json.JsonContent.Create createSshKey)
-                let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                let json = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
-                let id = json.GetProperty("id").GetUInt64().ToString()
-                return CreateResponse(Id = id, Properties = request.Properties)
+                return! self.AsyncCreateSshKey request ct
             elif request.Type = vmResourceName then
                 return! self.AsyncCreateVM VMTemplateType.Standard request
             elif request.Type = customVmResourceName then
@@ -696,7 +708,7 @@ Invoice for renewal {invoiceInfo}:"
         }
 
     override self.Create (request: CreateRequest, ct: CancellationToken): Task<CreateResponse> = 
-        Async.StartAsTask(self.AsyncCreate request, TaskCreationOptions.None, ct)
+        Async.StartAsTask(self.AsyncCreate request ct, TaskCreationOptions.None, ct)
 
     member private self.AsyncUpdate(request: UpdateRequest): Async<UpdateResponse> =
         async {
