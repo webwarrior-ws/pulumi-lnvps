@@ -58,18 +58,43 @@ type CustomHttpClient(retryCount: int) =
                 | _ -> checkException e.InnerException
         checkException ex
 
+    let debugPrintHttpReq (req: HttpRequestMessage) = task {
+        let! body = if req.Content <> null then req.Content.ReadAsStringAsync() else Task.FromResult("")
+        // Remove line breaks from the body to keep the console output on one line
+        let flatBody = body.Replace("\r", "").Replace("\n", " ")
+
+        // Combine standard headers and content headers into one sequence
+        let allHeaders = seq { yield! req.Headers; if req.Content <> null then yield! req.Content.Headers }
+        let joinedHeaders =
+            allHeaders
+            |> Seq.map (
+                fun h ->
+                    let values = String.Join(",", h.Value)
+                    $"{h.Key}: {values}"
+            )
+            |> fun headers -> String.Join(" | ", headers)
+
+        let ret = sprintf "%O %s HTTP/%O -> Headers: [%s] -> Body: %s" req.Method req.RequestUri.PathAndQuery req.Version joinedHeaders flatBody
+        return ret
+    }
+
     member _.DefaultRequestHeaders = httpClient.DefaultRequestHeaders
 
     member _.SendAsync(request: HttpRequestMessage, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
         let rec sendWithRetry (request: HttpRequestMessage) (token: CancellationToken) (currentAttempt: int) : Async<HttpResponseMessage> =
             async {
+                let beforeReqTime = DateTime.Now
                 try
+
                     let! response = httpClient.SendAsync(request, token) |> Async.AwaitTask
                     return response
                 with
                 | ex when IsConnectionTimedOutException ex ->
                     if currentAttempt <= retryCount then
-                        eprintfn $"[CustomHttpClient] Connection for request '{request.ToString()}' timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
+                        let offset = DateTime.Now - beforeReqTime
+                        eprintfn $"[CustomHttpClient] Retryable exception after 'offset.ToString()': {ex.ToString()}"
+                        let! reqStr = Async.AwaitTask (debugPrintHttpReq request)
+                        eprintfn $"[CustomHttpClient] Connection for request '{reqStr}' timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
                         do! Async.Sleep (TimeSpan.FromSeconds 5)
                         return! sendWithRetry request token (currentAttempt + 1)
                     else
