@@ -37,6 +37,31 @@ type VMTemplateType =
     | Standard
     | Custom
 
+type CustomHttpReqMsg(method: HttpMethod, absoluteUrl: string, content) =
+    let innerReq =
+        let message = new HttpRequestMessage(method, absoluteUrl)
+        match content with
+        | Some jsonContent -> message.Content <- jsonContent
+        | None -> ()
+        message
+
+    member val Value =
+        innerReq
+
+    member _.Dispose() =
+        (innerReq :> IDisposable).Dispose()
+
+    override _.ToString() =
+        match content with
+        | Some jsonContent ->
+            sprintf "HttpReqMsg(%s){Method:%s,Content:%s}" absoluteUrl (method.ToString()) (jsonContent.ToString())
+        | None ->
+            sprintf "HttpReqMsg(%s){Method:%s}" absoluteUrl (method.ToString())
+
+    interface IDisposable with
+        member this.Dispose() = this.Dispose()
+
+
 type CustomHttpClient(retryCount: int) =
     let httpClient = new HttpClient()
     // Disable HttpClient's built-in timeout so that Pulumi's CustomResourceOptions timeout
@@ -58,42 +83,21 @@ type CustomHttpClient(retryCount: int) =
                 | _ -> checkException e.InnerException
         checkException ex
 
-    let debugPrintHttpReq (req: HttpRequestMessage) = task {
-        let! body = if req.Content <> null then req.Content.ReadAsStringAsync() else Task.FromResult("")
-        // Remove line breaks from the body to keep the console output on one line
-        let flatBody = body.Replace("\r", "").Replace("\n", " ")
-
-        // Combine standard headers and content headers into one sequence
-        let allHeaders = seq { yield! req.Headers; if req.Content <> null then yield! req.Content.Headers }
-        let joinedHeaders =
-            allHeaders
-            |> Seq.map (
-                fun h ->
-                    let values = String.Join(",", h.Value)
-                    $"{h.Key}: {values}"
-            )
-            |> fun headers -> String.Join(" | ", headers)
-
-        let ret = sprintf "%O %s HTTP/%O -> Headers: [%s] -> Body: %s" req.Method req.RequestUri.PathAndQuery req.Version joinedHeaders flatBody
-        return ret
-    }
-
     member _.DefaultRequestHeaders = httpClient.DefaultRequestHeaders
 
-    member _.SendAsync(request: HttpRequestMessage, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
-        let rec sendWithRetry (request: HttpRequestMessage) (token: CancellationToken) (currentAttempt: int) : Async<HttpResponseMessage> =
+    member _.SendAsync(request: CustomHttpReqMsg, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
+        let rec sendWithRetry (request: CustomHttpReqMsg) (token: CancellationToken) (currentAttempt: int) : Async<HttpResponseMessage> =
             async {
                 let beforeReqTime = DateTime.Now
                 try
-
-                    let! response = httpClient.SendAsync(request, token) |> Async.AwaitTask
+                    let! response = httpClient.SendAsync(request.Value, token) |> Async.AwaitTask
                     return response
                 with
                 | ex when IsConnectionTimedOutException ex ->
                     if currentAttempt <= retryCount then
                         let offset = DateTime.Now - beforeReqTime
                         eprintfn $"[CustomHttpClient] Retryable exception after 'offset.ToString()': {ex.ToString()}"
-                        let! reqStr = Async.AwaitTask (debugPrintHttpReq request)
+                        let reqStr = request.ToString()
                         eprintfn $"[CustomHttpClient] Connection for request '{reqStr}' timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
                         do! Async.Sleep (TimeSpan.FromSeconds 5)
                         return! sendWithRetry request token (currentAttempt + 1)
@@ -182,11 +186,7 @@ type LnVpsProvider(nostrPrivateKey: string) =
             let base64EncodedEvent = Convert.ToBase64String(Text.Encoding.UTF8.GetBytes serializedEvent)
             httpClient.DefaultRequestHeaders.Authorization <- Headers.AuthenticationHeaderValue("Nostr", base64EncodedEvent)
 
-            use message = new HttpRequestMessage(method, absoluteUrl)
-            match content with
-            | Some jsonContent -> message.Content <- jsonContent
-            | None -> ()
-
+            use message = new CustomHttpReqMsg(method, absoluteUrl, content)
             let! response =
                 match ct with
                 | Some token -> httpClient.SendAsync(message, token)
