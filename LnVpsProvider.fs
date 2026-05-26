@@ -7,6 +7,7 @@ open System.IO
 open System.Linq
 open System.Net
 open System.Net.Http
+open System.Net.Http.Json
 open System.Text.Json
 open System.Threading
 open System.Threading.Tasks
@@ -37,11 +38,12 @@ type VMTemplateType =
     | Standard
     | Custom
 
-type CustomHttpReqMsg(method: HttpMethod, absoluteUrl: string, content) =
+type CustomHttpReqMsg(method: HttpMethod, absoluteUrl: string, maybeContent: Option<obj>) =
     let innerReq =
         let message = new HttpRequestMessage(method, absoluteUrl)
-        match content with
-        | Some jsonContent -> message.Content <- jsonContent
+        match maybeContent with
+        | Some contentObj ->
+            message.Content <- JsonContent.Create contentObj
         | None -> ()
         message
 
@@ -52,9 +54,9 @@ type CustomHttpReqMsg(method: HttpMethod, absoluteUrl: string, content) =
         (innerReq :> IDisposable).Dispose()
 
     override _.ToString() =
-        match content with
-        | Some jsonContent ->
-            sprintf "HttpReqMsg(%s){Method:%s,Content:%s}" absoluteUrl (method.ToString()) (jsonContent.ToString())
+        match maybeContent with
+        | Some contentObj ->
+            sprintf "HttpReqMsg(%s){Method:%s,Content:%s}" absoluteUrl (method.ToString()) (contentObj.ToString())
         | None ->
             sprintf "HttpReqMsg(%s){Method:%s}" absoluteUrl (method.ToString())
 
@@ -96,7 +98,7 @@ type CustomHttpClient(retryCount: int) =
                 | ex when IsConnectionTimedOutException ex ->
                     if currentAttempt <= retryCount then
                         let offset = DateTime.Now - beforeReqTime
-                        eprintfn $"[CustomHttpClient] Retryable exception after 'offset.ToString()': {ex.ToString()}"
+                        eprintfn $"[CustomHttpClient] Retryable exception after '{offset.ToString()}': {ex.ToString()}"
                         let reqStr = request.ToString()
                         eprintfn $"[CustomHttpClient] Connection for request '{reqStr}' timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
                         do! Async.Sleep (TimeSpan.FromSeconds 5)
@@ -170,7 +172,8 @@ type LnVpsProvider(nostrPrivateKey: string) =
             | false, _ -> failwith $"Value of property {name} ({propertyValue}) is not a number{lineNumberString}"
         | false, _ -> failwith $"No {name} property in dictionary{lineNumberString}"
 
-    member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, ?content: Json.JsonContent, ?ct: CancellationToken) =
+    // maybeContent is Option<obj> because the 'obj' is an anonymous record, which has different structure each time
+    member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, maybeContent: Option<obj>, ?ct: CancellationToken) =
         async {
             let absoluteUrl = apiBaseUrl + relativeUrl
             let event = NostrEvent(
@@ -186,7 +189,7 @@ type LnVpsProvider(nostrPrivateKey: string) =
             let base64EncodedEvent = Convert.ToBase64String(Text.Encoding.UTF8.GetBytes serializedEvent)
             httpClient.DefaultRequestHeaders.Authorization <- Headers.AuthenticationHeaderValue("Nostr", base64EncodedEvent)
 
-            use message = new CustomHttpReqMsg(method, absoluteUrl, content)
+            use message = new CustomHttpReqMsg(method, absoluteUrl, maybeContent)
             let! response =
                 match ct with
                 | Some token -> httpClient.SendAsync(message, token)
@@ -196,15 +199,17 @@ type LnVpsProvider(nostrPrivateKey: string) =
             else
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
                 let contentString =
-                    match content with
-                    | Some jsonContent -> $"(content = {jsonContent.Value})"
+                    match maybeContent with
+                    | Some contentObj ->
+                        let jsonContent = JsonContent.Create contentObj
+                        $"(content = {jsonContent.Value})"
                     | None -> String.Empty
                 return raise <| RequestFailed(method, relativeUrl, contentString, response.StatusCode, responseBody)
         }
     
     member self.AsyncGetInvoice (vmId: uint64) = 
         async {
-            let! invoiceResponse = self.AsyncSendRequest($"/api/v1/vm/{vmId}/renew?method=lightning", HttpMethod.Get)
+            let! invoiceResponse = self.AsyncSendRequest($"/api/v1/vm/{vmId}/renew?method=lightning", HttpMethod.Get, None)
             let! invoiceResponseBody = invoiceResponse.Content.ReadAsStringAsync() |> Async.AwaitTask
             let invoiceData = JsonDocument.Parse(invoiceResponseBody).RootElement.GetProperty "data"
             return invoiceData
@@ -252,7 +257,7 @@ Invoice for renewal {invoiceInfo}:"
 
     member private self.AsyncGetVMStatus(vmId: uint64) =
         async {
-            let! response = self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Get)
+            let! response = self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Get, None)
             let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
             let vmStatusJson = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
 
@@ -290,7 +295,7 @@ Invoice for renewal {invoiceInfo}:"
                         | true, "error" -> failwith "VM status is 'error'"
                         | true, "unknown" -> failwith "VM status is 'unknown'"
                         | true, "stopped" -> 
-                            do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/start", HttpMethod.Patch) |> Async.Ignore
+                            do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/start", HttpMethod.Patch, None) |> Async.Ignore
                         | true, "pending" -> return! loop ()
                         | true, "running" ->
                             return ()
@@ -311,7 +316,7 @@ Invoice for renewal {invoiceInfo}:"
                         return failwith $"Payment id={paymentId} is still not paid after {maxWaitTime}."
                     else
                         do! Async.Sleep timeBetweenRetries
-                        let! response = self.AsyncSendRequest($"/api/v1/payment/{paymentId}", HttpMethod.Get)
+                        let! response = self.AsyncSendRequest($"/api/v1/payment/{paymentId}", HttpMethod.Get, None)
                         let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
                         let responseJson = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
                         if responseJson.GetProperty("is_paid").GetBoolean() then
@@ -333,10 +338,10 @@ Invoice for renewal {invoiceInfo}:"
             if vmSshKeyId <> requestSshKeyId then
                 let vmPatchRequestBody = {| ssh_key_id = uint64 requestSshKeyId |}
                 do! 
-                    self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Patch, Json.JsonContent.Create vmPatchRequestBody)
+                    self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Patch, Some vmPatchRequestBody)
                     |> Async.Ignore
 
-            do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/re-install", HttpMethod.Patch) |> Async.Ignore
+            do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/re-install", HttpMethod.Patch, None) |> Async.Ignore
             do! self.AsyncWaitForVMToBeRunning (TimeSpan.FromMinutes 5.0) (TimeSpan.FromSeconds 5.0) vmId
             
             let! currentVmStatus = self.AsyncGetVMStatus vmId
@@ -357,11 +362,11 @@ Invoice for renewal {invoiceInfo}:"
                             image_id = imageId
                             ssh_key_id = uint64 sshKeyId
                         |}
-                    self.AsyncSendRequest("/api/v1/vm", HttpMethod.Post, Json.JsonContent.Create createVmRequestObject)
+                    self.AsyncSendRequest("/api/v1/vm", HttpMethod.Post, Some createVmRequestObject)
                 | Custom ->
                     async {
                         let regionId = self.GetPropertyNumber(request.Properties, "region_id", __LINE__) |> uint64
-                        let! templatesResponse = self.AsyncSendRequest("/api/v1/vm/templates", HttpMethod.Get)
+                        let! templatesResponse = self.AsyncSendRequest("/api/v1/vm/templates", HttpMethod.Get, None)
                         let! templatesResponseBody = templatesResponse.Content.ReadAsStringAsync() |> Async.AwaitTask
                         let templatesJson = JsonDocument.Parse(templatesResponseBody).RootElement.GetProperty "data"
                         let customTemplates = templatesJson.GetProperty("custom_template").EnumerateArray()
@@ -393,7 +398,7 @@ Invoice for renewal {invoiceInfo}:"
                             self.AsyncSendRequest(
                                     "/api/v1/vm/custom-template",
                                     HttpMethod.Post,
-                                    Json.JsonContent.Create customVmOrderObject
+                                    Some customVmOrderObject
                                 )
                         try
                             return! createCustomTemplateVmRequest
@@ -404,7 +409,7 @@ Invoice for renewal {invoiceInfo}:"
                                 .GetProperty("error")
                                 .GetString()
                                 .Contains("Email verification is required") ->
-                            let! accountInfoResponse = self.AsyncSendRequest("/api/v1/account", HttpMethod.Get)
+                            let! accountInfoResponse = self.AsyncSendRequest("/api/v1/account", HttpMethod.Get, None)
                             let! accountResponseBody = accountInfoResponse.Content.ReadAsStringAsync() |> Async.AwaitTask
                             let accountJson = Nodes.JsonNode.Parse(accountResponseBody).["data"]
             
@@ -414,7 +419,7 @@ Invoice for renewal {invoiceInfo}:"
                                 self.AsyncSendRequest(
                                     "/api/v1/account", 
                                     HttpMethod.Patch, 
-                                    Json.JsonContent.Create accountJson
+                                    Some accountJson
                                 )
                             
                             let errorMessage = $"Email verification is needed, please verify it checking inbox of {email} and retry deploy after that"
@@ -735,7 +740,7 @@ Invoice for renewal {invoiceInfo}:"
                 let key_data = self.GetPropertyString(request.Properties, "key_data", __LINE__)
                 {| name = name; key_data = key_data |}
 
-            let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Post, Json.JsonContent.Create createSshKey, ct)
+            let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Post, Some createSshKey, ct)
             let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
             let json = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
             let id = json.GetProperty("id").GetUInt64().ToString()
@@ -790,7 +795,7 @@ Invoice for renewal {invoiceInfo}:"
     member private self.AsyncRead (request: ReadRequest) : Async<ReadResponse> =
         async {
             if request.Type = sshKeyResourceName then
-                let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Get)
+                let! response = self.AsyncSendRequest("/api/v1/ssh-key", HttpMethod.Get, None)
                 let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
                 let json = JsonDocument.Parse(responseBody).RootElement.GetProperty "data"
                 let maybeUserSshKeyObject = 
