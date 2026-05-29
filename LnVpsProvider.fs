@@ -101,7 +101,7 @@ type CustomHttpClient(retryCount: int) =
                         eprintfn $"[CustomHttpClient] Retryable exception after '{offset.ToString()}': {ex.ToString()}"
                         let reqStr = request.ToString()
                         eprintfn $"[CustomHttpClient] Connection for request '{reqStr}' timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
-                        do! Async.Sleep (TimeSpan.FromSeconds 5)
+                        do! Async.Sleep (TimeSpan.FromSeconds 5L)
                         return! sendWithRetry request token (currentAttempt + 1)
                     else
                         return raise ex
