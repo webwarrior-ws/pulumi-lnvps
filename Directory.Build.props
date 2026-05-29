@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <WarnOn>FS0193;FS1182;FS3218</WarnOn>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' != 'Debug' ">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

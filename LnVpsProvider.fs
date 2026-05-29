@@ -101,7 +101,7 @@ type CustomHttpClient(retryCount: int) =
                         eprintfn $"[CustomHttpClient] Retryable exception after '{offset.ToString()}': {ex.ToString()}"
                         let reqStr = request.ToString()
                         eprintfn $"[CustomHttpClient] Connection for request '{reqStr}' timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
-                        do! Async.Sleep (TimeSpan.FromSeconds 5)
+                        do! Async.Sleep (TimeSpan.FromSeconds 5L)
                         return! sendWithRetry request token (currentAttempt + 1)
                     else
                         return raise ex
@@ -454,7 +454,7 @@ Invoice for renewal {invoiceInfo}:"
             return CreateResponse(Id = string vmId, Properties = updatedProperties)
         }
 
-    override self.GetSchema (request: GetSchemaRequest, ct: CancellationToken): Task<GetSchemaResponse> =
+    override self.GetSchema (_request: GetSchemaRequest, _ct: CancellationToken): Task<GetSchemaResponse> =
         let sshKeyProperties = 
             """{
                                 "name": {
@@ -702,26 +702,26 @@ Invoice for renewal {invoiceInfo}:"
         
         Task.FromResult <| GetSchemaResponse(Schema = schema)
 
-    override self.CheckConfig (request: CheckRequest, ct: CancellationToken): Task<CheckResponse> = 
+    override self.CheckConfig (request: CheckRequest, _ct: CancellationToken): Task<CheckResponse> =
         Task.FromResult <| CheckResponse(Inputs = request.NewInputs)
 
-    override self.DiffConfig (request: DiffRequest, ct: CancellationToken): Task<DiffResponse> = 
+    override self.DiffConfig (_request: DiffRequest, _ct: CancellationToken): Task<DiffResponse> =
         Task.FromResult <| DiffResponse()
 
-    override self.Configure (request: ConfigureRequest, ct: CancellationToken): Task<ConfigureResponse> = 
+    override self.Configure (_request: ConfigureRequest, _ct: CancellationToken): Task<ConfigureResponse> =
         if String.IsNullOrWhiteSpace nostrPrivateKey then
             failwith $"Environment variable {LnVpsProvider.NostrPrivateKeyEnvVarName} not provided."
         if String.IsNullOrWhiteSpace email then
             failwith $"Environment variable {LnVpsProvider.EmailEnvVarName} not provided."
         Task.FromResult <| ConfigureResponse()
 
-    override self.Check (request: CheckRequest, ct: CancellationToken): Task<CheckResponse> = 
+    override self.Check (request: CheckRequest, _ct: CancellationToken): Task<CheckResponse> =
         if request.Type = sshKeyResourceName || request.Type = vmResourceName || request.Type = customVmResourceName then
             Task.FromResult <| CheckResponse(Inputs = request.NewInputs)
         else
             failwith $"Unknown resource type '{request.Type}'"
 
-    override self.Diff (request: DiffRequest, ct: CancellationToken): Task<DiffResponse> = 
+    override self.Diff (request: DiffRequest, _ct: CancellationToken): Task<DiffResponse> =
         let diff = request.NewInputs.Except request.OldState 
         let changedPropertiesNames = diff |> Seq.map (fun pair -> pair.Key) |> Seq.toArray
         let hasChanges = changedPropertiesNames.Length > 0

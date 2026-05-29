@@ -8,12 +8,19 @@ on:
     
 env:
   PULUMI_VERSION: 3.201.0
+  DOTNET_VERSION: "10.0"
 
 jobs:
   bulidAndRelease:
     name: Build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    container:
+      image: "ubuntu:26.04"
     steps:
+    - name: Install required dependencies
+      run: |
+        apt update
+        apt install --yes zip
     - name: Checkout Repo
       uses: actions/checkout@v5
       with:
@@ -23,6 +30,16 @@ jobs:
       uses: pulumi/actions@v6.2.0
       with:
         pulumi-version: ${{ env.PULUMI_VERSION }}        
+    - name: Setup .NET
+      run: |
+        # We need to install `ca-certificates`, otherwise we get these errors in the CI:
+        # Unable to load the service index for source https://api.nuget.org/v3/index.json.
+        # The SSL connection could not be established, see inner exception.
+        # The remote certificate is invalid because of errors in the certificate chain: UntrustedRoot
+        apt install --yes --no-install-recommends ca-certificates
+
+        apt install --yes --no-install-recommends dotnet-sdk-${{ env.DOTNET_VERSION }}
+        dotnet --version
     - name: Build
       run: |
         # version.txt is deleted when running pulumi package gen-sdk, so back it up
