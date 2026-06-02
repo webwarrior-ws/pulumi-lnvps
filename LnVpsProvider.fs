@@ -454,6 +454,22 @@ Invoice for renewal {invoiceInfo}:"
             return CreateResponse(Id = string vmId, Properties = updatedProperties)
         }
 
+    member self.AsyncChangeEmail (email: string) =
+        async {
+            let! accountInfoResponse = self.AsyncSendRequest("/api/v1/account", HttpMethod.Get, None)
+            let! accountResponseBody = accountInfoResponse.Content.ReadAsStringAsync() |> Async.AwaitTask
+            let accountJson = Nodes.JsonNode.Parse(accountResponseBody).["data"]
+            
+            accountJson.["email"] <- Nodes.JsonValue.Create email
+
+            return!
+                self.AsyncSendRequest(
+                    "/api/v1/account", 
+                    HttpMethod.Patch, 
+                    Some accountJson
+            )
+        }
+
     override self.GetSchema (_request: GetSchemaRequest, _ct: CancellationToken): Task<GetSchemaResponse> =
         let sshKeyProperties = 
             """{
