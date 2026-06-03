@@ -733,7 +733,7 @@ Invoice for renewal {invoiceInfo}:"
     override self.DiffConfig (_request: DiffRequest, _ct: CancellationToken): Task<DiffResponse> =
         Task.FromResult <| DiffResponse()
 
-    override self.Configure (_request: ConfigureRequest, _ct: CancellationToken): Task<ConfigureResponse> =
+    override self.Configure (request: ConfigureRequest, _ct: CancellationToken): Task<ConfigureResponse> =
         if String.IsNullOrWhiteSpace nostrPrivateKey then
             failwith $"Environment variable {LnVpsProvider.NostrPrivateKeyEnvVarName} not provided."
         if String.IsNullOrWhiteSpace email then
