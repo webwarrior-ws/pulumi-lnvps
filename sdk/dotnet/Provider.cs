@@ -19,7 +19,7 @@ namespace Pulumi.Lnvps
         /// <param name="name">The unique name of the resource</param>
         /// <param name="args">The arguments used to populate this resource's properties</param>
         /// <param name="options">A bag of options that control this resource's behavior</param>
-        public Provider(string name, ProviderArgs? args = null, CustomResourceOptions? options = null)
+        public Provider(string name, ProviderArgs args, CustomResourceOptions? options = null)
             : base("lnvps", name, args ?? new ProviderArgs(), MakeResourceOptions(options, ""))
         {
         }
@@ -39,6 +39,9 @@ namespace Pulumi.Lnvps
 
     public sealed class ProviderArgs : global::Pulumi.ResourceArgs
     {
+        [Input("sendMessageScriptPath", required: true)]
+        public Input<string> SendMessageScriptPath { get; set; } = null!;
+
         public ProviderArgs()
         {
         }
