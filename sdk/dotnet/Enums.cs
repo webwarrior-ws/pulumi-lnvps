@@ -20,6 +20,7 @@ namespace Pulumi.Lnvps
         public static DiskInterface Sata { get; } = new DiskInterface("sata");
         public static DiskInterface Scsi { get; } = new DiskInterface("scsi");
         public static DiskInterface Pcie { get; } = new DiskInterface("pcie");
+        public static DiskInterface Auto { get; } = new DiskInterface("auto");
 
         public static bool operator ==(DiskInterface left, DiskInterface right) => left.Equals(right);
         public static bool operator !=(DiskInterface left, DiskInterface right) => !left.Equals(right);

@@ -386,13 +386,22 @@ Invoice for renewal {invoiceInfo}:"
                         let memoryInBytes = self.GetPropertyNumber(request.Properties, "memory", __LINE__) * bytesInGigabyte
                         let diskInBytes = self.GetPropertyNumber(request.Properties, "disk", __LINE__) * bytesInGigabyte
                         let customVmOrderObject =
+                            let disk_type = self.GetPropertyString(request.Properties, "disk_type", __LINE__)
+                            let disk_interface =
+                                match self.GetPropertyString(request.Properties, "disk_interface", __LINE__) with
+                                | "auto" ->
+                                    match disk_type with
+                                    | "ssd" -> "pcie"
+                                    | "hdd" -> "sata"
+                                    | otherType -> failwithf "Unknown disk type: %s" otherType
+                                | value -> value
                             {|
                                 pricing_id = pricingId
                                 cpu = self.GetPropertyNumber(request.Properties, "cpu", __LINE__)
                                 memory = memoryInBytes
                                 disk = diskInBytes
-                                disk_type = self.GetPropertyString(request.Properties, "disk_type", __LINE__)
-                                disk_interface = self.GetPropertyString(request.Properties, "disk_interface", __LINE__)
+                                disk_type = disk_type
+                                disk_interface = disk_interface
                                 image_id = imageId
                                 ssh_key_id = uint64 sshKeyId
                             |}
@@ -615,7 +624,7 @@ Invoice for renewal {invoiceInfo}:"
         let diskInterfaceEnumTypeName = "lnvps:index:diskInterface"
         let diskInterfaceEnumValuesArray = 
             let values = 
-                [| "sata"; "scsi"; "pcie" |]
+                [| "sata"; "scsi"; "pcie"; "auto" |]
                 |> Array.map (fun value -> sprintf """{ "name": "%s", "value": "%s" }""" value value)
             sprintf "[ %s ]" (String.Join(", ", values))
         
@@ -659,7 +668,7 @@ Invoice for renewal {invoiceInfo}:"
                                 },
                                 "disk_interface": {
                                     "type": "string",
-                                    "default": "pcie",
+                                    "default": "auto",
                                     "description": "'sata' | 'scsi' | 'pcie'",
                                     "$ref": "#/types/%s",
                                     "language": {
@@ -723,7 +732,7 @@ Invoice for renewal {invoiceInfo}:"
                         "%s" : {
                             "properties": %s,
                             "inputProperties": %s,
-                            "requiredInputs": [ "region_id", "cpu", "memory", "disk", "disk_type", "disk_interface" ]
+                            "requiredInputs": [ "region_id", "cpu", "memory", "disk", "disk_type" ]
                         }
                     },
                     "provider": {

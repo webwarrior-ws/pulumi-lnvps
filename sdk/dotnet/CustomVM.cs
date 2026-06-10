@@ -90,8 +90,8 @@ namespace Pulumi.Lnvps
         /// <summary>
         /// 'sata' | 'scsi' | 'pcie'
         /// </summary>
-        [Input("disk_interface", required: true)]
-        public Input<Pulumi.Lnvps.DiskInterface> DiskInterface { get; set; } = null!;
+        [Input("disk_interface")]
+        public Input<Pulumi.Lnvps.DiskInterface>? DiskInterface { get; set; }
 
         /// <summary>
         /// Disk type (ssd or hdd)
@@ -125,7 +125,7 @@ namespace Pulumi.Lnvps
 
         public CustomVMArgs()
         {
-            DiskInterface = Pulumi.Lnvps.DiskInterface.Pcie;
+            DiskInterface = Pulumi.Lnvps.DiskInterface.Auto;
             DiskType = Pulumi.Lnvps.DiskType.Ssd;
         }
         public static new CustomVMArgs Empty => new CustomVMArgs();
