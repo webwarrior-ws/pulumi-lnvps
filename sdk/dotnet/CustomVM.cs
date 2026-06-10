@@ -38,7 +38,7 @@ namespace Pulumi.Lnvps
         /// <param name="name">The unique name of the resource</param>
         /// <param name="args">The arguments used to populate this resource's properties</param>
         /// <param name="options">A bag of options that control this resource's behavior</param>
-        public CustomVM(string name, CustomVMArgs? args = null, CustomResourceOptions? options = null)
+        public CustomVM(string name, CustomVMArgs args, CustomResourceOptions? options = null)
             : base("lnvps:index:CustomVM", name, args ?? new CustomVMArgs(), MakeResourceOptions(options, ""))
         {
         }
@@ -78,26 +78,26 @@ namespace Pulumi.Lnvps
         /// <summary>
         /// Number of CPU cores
         /// </summary>
-        [Input("cpu")]
-        public Input<int>? Cpu { get; set; }
+        [Input("cpu", required: true)]
+        public Input<int> Cpu { get; set; } = null!;
 
         /// <summary>
         /// Disk size in Gigabytes
         /// </summary>
-        [Input("disk")]
-        public Input<int>? Disk { get; set; }
+        [Input("disk", required: true)]
+        public Input<int> Disk { get; set; } = null!;
 
         /// <summary>
         /// 'sata' | 'scsi' | 'pcie'
         /// </summary>
-        [Input("disk_interface")]
-        public Input<string>? DiskInterface { get; set; }
+        [Input("disk_interface", required: true)]
+        public Input<Pulumi.Lnvps.DiskInterface> DiskInterface { get; set; } = null!;
 
         /// <summary>
         /// Disk type (ssd or hdd)
         /// </summary>
-        [Input("disk_type")]
-        public Input<string>? DiskType { get; set; }
+        [Input("disk_type", required: true)]
+        public Input<Pulumi.Lnvps.DiskType> DiskType { get; set; } = null!;
 
         /// <summary>
         /// VM image Id
@@ -108,14 +108,14 @@ namespace Pulumi.Lnvps
         /// <summary>
         /// Memory in Gigabytes
         /// </summary>
-        [Input("memory")]
-        public Input<int>? Memory { get; set; }
+        [Input("memory", required: true)]
+        public Input<int> Memory { get; set; } = null!;
 
         /// <summary>
         /// VM region Id
         /// </summary>
-        [Input("region_id")]
-        public Input<Pulumi.Lnvps.RegionId>? RegionId { get; set; }
+        [Input("region_id", required: true)]
+        public Input<Pulumi.Lnvps.RegionId> RegionId { get; set; } = null!;
 
         /// <summary>
         /// ID of SSH key installed on VM.
@@ -125,8 +125,8 @@ namespace Pulumi.Lnvps
 
         public CustomVMArgs()
         {
-            DiskInterface = "pcie";
-            DiskType = "ssd";
+            DiskInterface = Pulumi.Lnvps.DiskInterface.Pcie;
+            DiskType = Pulumi.Lnvps.DiskType.Ssd;
         }
         public static new CustomVMArgs Empty => new CustomVMArgs();
     }

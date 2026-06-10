@@ -604,6 +604,21 @@ Invoice for renewal {invoiceInfo}:"
             sprintf
                 "[ %s ]"
                 (String.Join(", ", regionValues))
+        
+        let diskTypeEnumTypeName = "lnvps:index:diskType"
+        let diskTypeEnumValuesArray = 
+            let values = 
+                [| "ssd"; "hdd" |]
+                |> Array.map (fun value -> sprintf """{ "name": "%s", "value": "%s" }""" value value)
+            sprintf "[ %s ]" (String.Join(", ", values))
+        
+        let diskInterfaceEnumTypeName = "lnvps:index:diskInterface"
+        let diskInterfaceEnumValuesArray = 
+            let values = 
+                [| "sata"; "scsi"; "pcie" |]
+                |> Array.map (fun value -> sprintf """{ "name": "%s", "value": "%s" }""" value value)
+            sprintf "[ %s ]" (String.Join(", ", values))
+        
         let customVmInputProperties = 
             sprintf
                 """{
@@ -635,6 +650,7 @@ Invoice for renewal {invoiceInfo}:"
                                     "type": "string",
                                     "default": "ssd",
                                     "description": "Disk type (ssd or hdd)",
+                                    "$ref": "#/types/%s",
                                     "language": {
                                         "csharp": { 
                                             "name": "DiskType"
@@ -645,6 +661,7 @@ Invoice for renewal {invoiceInfo}:"
                                     "type": "string",
                                     "default": "pcie",
                                     "description": "'sata' | 'scsi' | 'pcie'",
+                                    "$ref": "#/types/%s",
                                     "language": {
                                         "csharp": { 
                                             "name": "DiskInterface"
@@ -655,24 +672,29 @@ Invoice for renewal {invoiceInfo}:"
                 vmSshKeyProperty
                 vmImageIdProperty
                 regionIdEnumTypeName
+                diskTypeEnumTypeName
+                diskInterfaceEnumTypeName
     
         let typeDefinitions =
             let definitions =
                 [
-                    imageIdEnumTypeName, imageIdEnumValuesArray
-                    templateIdEnumTypeName, templateIdEnumValuesArray
-                    regionIdEnumTypeName, regionIdEnumValuesArray
+                    imageIdEnumTypeName, imageIdEnumValuesArray, "integer"
+                    templateIdEnumTypeName, templateIdEnumValuesArray, "integer"
+                    regionIdEnumTypeName, regionIdEnumValuesArray, "integer"
+                    diskTypeEnumTypeName, diskTypeEnumValuesArray, "string"
+                    diskInterfaceEnumTypeName, diskInterfaceEnumValuesArray, "string"
                 ]
                 |> List.map (
-                    fun (name, values) -> 
+                    fun (name, values, valuesType) -> 
                         sprintf
                             """
                                     "%s": {
-                                        "type": "integer",
+                                        "type": "%s",
                                         "enum": %s
                                     }
                             """
                             name
+                            valuesType
                             values
                     )
             
@@ -700,7 +722,8 @@ Invoice for renewal {invoiceInfo}:"
                         },
                         "%s" : {
                             "properties": %s,
-                            "inputProperties": %s
+                            "inputProperties": %s,
+                            "requiredInputs": [ "region_id", "cpu", "memory", "disk", "disk_type", "disk_interface" ]
                         }
                     },
                     "provider": {
