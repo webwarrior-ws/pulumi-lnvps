@@ -7,6 +7,63 @@ using Pulumi;
 
 namespace Pulumi.Lnvps
 {
+    [EnumType]
+    public readonly struct DiskInterface : IEquatable<DiskInterface>
+    {
+        private readonly string _value;
+
+        private DiskInterface(string value)
+        {
+            _value = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
+        public static DiskInterface Sata { get; } = new DiskInterface("sata");
+        public static DiskInterface Scsi { get; } = new DiskInterface("scsi");
+        public static DiskInterface Pcie { get; } = new DiskInterface("pcie");
+
+        public static bool operator ==(DiskInterface left, DiskInterface right) => left.Equals(right);
+        public static bool operator !=(DiskInterface left, DiskInterface right) => !left.Equals(right);
+
+        public static explicit operator string(DiskInterface value) => value._value;
+
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public override bool Equals(object? obj) => obj is DiskInterface other && Equals(other);
+        public bool Equals(DiskInterface other) => string.Equals(_value, other._value, StringComparison.Ordinal);
+
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public override int GetHashCode() => _value?.GetHashCode() ?? 0;
+
+        public override string ToString() => _value;
+    }
+
+    [EnumType]
+    public readonly struct DiskType : IEquatable<DiskType>
+    {
+        private readonly string _value;
+
+        private DiskType(string value)
+        {
+            _value = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
+        public static DiskType Ssd { get; } = new DiskType("ssd");
+        public static DiskType Hdd { get; } = new DiskType("hdd");
+
+        public static bool operator ==(DiskType left, DiskType right) => left.Equals(right);
+        public static bool operator !=(DiskType left, DiskType right) => !left.Equals(right);
+
+        public static explicit operator string(DiskType value) => value._value;
+
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public override bool Equals(object? obj) => obj is DiskType other && Equals(other);
+        public bool Equals(DiskType other) => string.Equals(_value, other._value, StringComparison.Ordinal);
+
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public override int GetHashCode() => _value?.GetHashCode() ?? 0;
+
+        public override string ToString() => _value;
+    }
+
     public enum ImageId
     {
         Ubuntu2404 = 1,
