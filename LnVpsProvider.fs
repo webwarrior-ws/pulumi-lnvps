@@ -297,7 +297,13 @@ Invoice for renewal {invoiceInfo}:"
                         | true, "error" -> failwith "VM status is 'error'"
                         | true, "unknown" -> failwith "VM status is 'unknown'"
                         | true, "stopped" -> 
-                            do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/start", HttpMethod.Patch, None) |> Async.Ignore
+                            try
+                                do! self.AsyncSendRequest($"/api/v1/vm/{vmId}/start", HttpMethod.Patch, None) |> Async.Ignore
+                            with
+                            | :? RequestFailed as requestFailed when requestFailed.StatusCode = HttpStatusCode.InternalServerError ->
+                                // /start may return InternalServerError after VM is created, see https://github.com/LNVPS/api/issues/127
+                                // if this is the case, retry later
+                                return! loop ()
                         | true, "pending" -> return! loop ()
                         | true, "running" ->
                             return ()
