@@ -305,6 +305,7 @@ Invoice for renewal {invoiceInfo}:"
                                 // if this is the case, retry later
                                 return! loop ()
                         | true, "pending" -> return! loop ()
+                        | true, "creating" -> return! loop ()
                         | true, "running" ->
                             return ()
                         | true, unknownStatus -> failwith $"Unknown VM status: '{unknownStatus}'"
