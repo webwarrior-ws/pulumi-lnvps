@@ -64,7 +64,7 @@ type CustomHttpReqMsg(method: HttpMethod, absoluteUrl: string, maybeContent: Opt
         member this.Dispose() = this.Dispose()
 
 
-type CustomHttpClient(retryCount: int) =
+type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
     let httpClient = new HttpClient()
     // Disable HttpClient's built-in timeout so that Pulumi's CustomResourceOptions timeout
     // (passed via CancellationToken) is the only one that controls cancellation.
@@ -98,10 +98,16 @@ type CustomHttpClient(retryCount: int) =
                 | ex when IsConnectionTimedOutException ex ->
                     if currentAttempt <= retryCount then
                         let offset = DateTime.Now - beforeReqTime
-                        eprintfn $"[CustomHttpClient] Retryable exception after '{offset.ToString()}': {ex.ToString()}"
+                        let logMessage = $"[CustomHttpClient] Retryable exception after '{offset.ToString()}': {ex.ToString()}"
+                        do! 
+                            host.LogAsync(LogRequest(LogSeverity.Warning, logMessage))
+                            |> Async.AwaitTask
                         let reqStr = request.ToString()
-                        eprintfn $"[CustomHttpClient] Connection for request '{reqStr}' timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
-                        do! Async.Sleep (TimeSpan.FromSeconds 5L)
+                        let logMessage2 = $"[CustomHttpClient] Connection for request '{reqStr}' timed out (attempt {currentAttempt}/{retryCount + 1}). Retrying in 5s..."
+                        do!
+                            host.LogAsync(LogRequest(LogSeverity.Warning, logMessage2))
+                            |> Async.AwaitTask
+                        do! Async.Sleep (TimeSpan.FromSeconds 5.0)
                         return! sendWithRetry request token (currentAttempt + 1)
                     else
                         return raise ex
@@ -116,7 +122,7 @@ type CustomHttpClient(retryCount: int) =
     interface IDisposable with
         member this.Dispose() = this.Dispose()
 
-type LnVpsProvider(nostrPrivateKey: string) =
+type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
     inherit Pulumi.Experimental.Provider.Provider()
 
     static let sshKeyResourceName = "lnvps:index:SshKey"
@@ -124,7 +130,7 @@ type LnVpsProvider(nostrPrivateKey: string) =
     static let customVmResourceName = "lnvps:index:CustomVM"
     static let apiBaseUrl = "https://api.lnvps.net"
 
-    let httpClient = new CustomHttpClient(7)
+    let httpClient = new CustomHttpClient(7, host)
 
     let email = Environment.GetEnvironmentVariable LnVpsProvider.EmailEnvVarName
 
