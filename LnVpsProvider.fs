@@ -87,10 +87,11 @@ type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
 
     member _.DefaultRequestHeaders = httpClient.DefaultRequestHeaders
 
-    member _.SendAsync(request: CustomHttpReqMsg, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
-        let rec sendWithRetry (request: CustomHttpReqMsg) (token: CancellationToken) (currentAttempt: int) : Async<HttpResponseMessage> =
+    member _.SendAsync(requestFactory: unit -> CustomHttpReqMsg, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
+        let rec sendWithRetry (token: CancellationToken) (currentAttempt: int) : Async<HttpResponseMessage> =
             async {
                 let beforeReqTime = DateTime.Now
+                use request = requestFactory()
                 try
                     let! response = httpClient.SendAsync(request.Value, token) |> Async.AwaitTask
                     return response
@@ -108,13 +109,13 @@ type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
                             host.LogAsync(LogRequest(LogSeverity.Warning, logMessage2))
                             |> Async.AwaitTask
                         do! Async.Sleep (TimeSpan.FromSeconds 5.0)
-                        return! sendWithRetry request token (currentAttempt + 1)
+                        return! sendWithRetry token (currentAttempt + 1)
                     else
                         return raise ex
             }
         async {
             let token = defaultArg cancellationToken CancellationToken.None
-            return! sendWithRetry request token 1
+            return! sendWithRetry token 1
         }
 
     member _.Dispose() = (httpClient :> IDisposable).Dispose()
@@ -197,11 +198,11 @@ type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
             let base64EncodedEvent = Convert.ToBase64String(Text.Encoding.UTF8.GetBytes serializedEvent)
             httpClient.DefaultRequestHeaders.Authorization <- Headers.AuthenticationHeaderValue("Nostr", base64EncodedEvent)
 
-            use message = new CustomHttpReqMsg(method, absoluteUrl, maybeContent)
+            let requestMessageFactory = fun () -> new CustomHttpReqMsg(method, absoluteUrl, maybeContent)
             let! response =
                 match ct with
-                | Some token -> httpClient.SendAsync(message, token)
-                | None -> httpClient.SendAsync(message)
+                | Some token -> httpClient.SendAsync(requestMessageFactory, token)
+                | None -> httpClient.SendAsync(requestMessageFactory)
             if response.IsSuccessStatusCode then
                 return response
             else
