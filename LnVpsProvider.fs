@@ -92,11 +92,8 @@ type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
             async {
                 let beforeReqTime = DateTime.Now
                 use request = requestFactory()
-                try
-                    let! response = httpClient.SendAsync(request.Value, token) |> Async.AwaitTask
-                    return response
-                with
-                | ex when ex :? HttpRequestException || IsConnectionTimedOutException ex ->
+
+                let retry (ex: Exception) = async {
                     if currentAttempt <= retryCount then
                         let offset = DateTime.Now - beforeReqTime
                         let logMessage = $"[CustomHttpClient] Retryable exception after '{offset.ToString()}': {ex.ToString()}"
@@ -117,6 +114,16 @@ type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
                         return! sendWithRetry token (currentAttempt + 1)
                     else
                         return raise ex
+                }
+
+                try
+                    let! response = httpClient.SendAsync(request.Value, token) |> Async.AwaitTask
+                    return response
+                with
+                | ex ->
+                    match Fsdk.FSharpUtil.FindException<HttpRequestException> ex with
+                    | Some(httpRequestException) -> return! retry httpRequestException
+                    | None -> return raise ex
             }
         async {
             let token = defaultArg cancellationToken CancellationToken.None
