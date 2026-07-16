@@ -1,5 +1,7 @@
 ﻿module Pulumi.LnVps.Constants
 
+let DefaultApiBaseUrl = "https://api.lnvps.net"
+
 /// IDs of images
 let Images =
     [

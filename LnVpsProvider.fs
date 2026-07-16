@@ -85,13 +85,22 @@ type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
                 | _ -> checkException e.InnerException
         checkException ex
 
+    member val ApiBaseUrlOverride: Option<string> = None with get, set
+
     member _.DefaultRequestHeaders = httpClient.DefaultRequestHeaders
 
-    member _.SendAsync(requestFactory: unit -> CustomHttpReqMsg, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
+    member self.SendAsync(requestFactory: string -> CustomHttpReqMsg, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
         let rec sendWithRetry (token: CancellationToken) (currentAttempt: int) : Async<HttpResponseMessage> =
             async {
                 let beforeReqTime = DateTime.Now
-                use request = requestFactory()
+
+                let baseUrl =
+                    match self.ApiBaseUrlOverride with
+                    | Some url when currentAttempt <= retryCount / 2 -> url
+                    | _ -> Constants.DefaultApiBaseUrl
+                do! host.LogAsync(LogRequest(LogSeverity.Info, $"Using baseUrl = {baseUrl}")) |> Async.AwaitTask
+
+                use request = requestFactory baseUrl
 
                 let retry (ex: Exception) = async {
                     if currentAttempt <= retryCount then
@@ -141,14 +150,12 @@ type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
     static let sshKeyResourceName = "lnvps:index:SshKey"
     static let vmResourceName = "lnvps:index:VM"
     static let customVmResourceName = "lnvps:index:CustomVM"
-    static let defaultApiBaseUrl = "https://api.lnvps.net"
 
     let httpClient = new CustomHttpClient(7, host)
 
     let email = Environment.GetEnvironmentVariable LnVpsProvider.EmailEnvVarName
 
     member val SendMessageScriptPath: Option<FileInfo> = None with get, set
-    member val ApiBaseUrlOverride: Option<string> = None with get, set
 
     // Provider has to advertise its version when outputting schema, e.g. for SDK generation.
     // In pulumi-lnvps, we have Pulumi generate the terraform bridge, and it automatically pulls version from the tag.
@@ -197,27 +204,23 @@ type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
     // maybeContent is Option<obj> because the 'obj' is an anonymous record, which has different structure each time
     member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, maybeContent: Option<obj>, ?ct: CancellationToken) =
         async {
-            let baseUrl =
-                match self.ApiBaseUrlOverride with
-                | Some url -> url
-                | None -> defaultApiBaseUrl
-            do! host.LogAsync(LogRequest(LogSeverity.Info, $"Using baseUrl = {baseUrl}")) |> Async.AwaitTask
+            let requestMessageFactory baseUrl = 
+                let absoluteUrl = baseUrl + relativeUrl
+                let event = NostrEvent(
+                    Kind = NostrKind.HttpAuth,
+                    CreatedAt = DateTime.UtcNow,
+                    Content = String.Empty,
+                    Tags = NostrEventTags(NostrEventTag("u", absoluteUrl), NostrEventTag("method", method.Method))
+                )
 
-            let absoluteUrl = baseUrl + relativeUrl
-            let event = NostrEvent(
-                Kind = NostrKind.HttpAuth,
-                CreatedAt = DateTime.UtcNow,
-                Content = String.Empty,
-                Tags = NostrEventTags(NostrEventTag("u", absoluteUrl), NostrEventTag("method", method.Method))
-            )
+                let key = NostrPrivateKey.FromHex nostrPrivateKey
+                let signedEvent = event.Sign key
+                let serializedEvent = Nostr.Client.Json.NostrJson.Serialize signedEvent 
+                let base64EncodedEvent = Convert.ToBase64String(Text.Encoding.UTF8.GetBytes serializedEvent)
+                httpClient.DefaultRequestHeaders.Authorization <- Headers.AuthenticationHeaderValue("Nostr", base64EncodedEvent)
 
-            let key = NostrPrivateKey.FromHex nostrPrivateKey
-            let signedEvent = event.Sign key
-            let serializedEvent = Nostr.Client.Json.NostrJson.Serialize signedEvent 
-            let base64EncodedEvent = Convert.ToBase64String(Text.Encoding.UTF8.GetBytes serializedEvent)
-            httpClient.DefaultRequestHeaders.Authorization <- Headers.AuthenticationHeaderValue("Nostr", base64EncodedEvent)
-
-            let requestMessageFactory = fun () -> new CustomHttpReqMsg(method, absoluteUrl, maybeContent)
+                new CustomHttpReqMsg(method, absoluteUrl, maybeContent)
+            
             let! response =
                 match ct with
                 | Some token -> httpClient.SendAsync(requestMessageFactory, token)
@@ -821,7 +824,7 @@ Invoice for renewal {invoiceInfo}:"
         | true, value ->
             match value.TryGetString() with
             | true, url ->
-                self.ApiBaseUrlOverride <- Some url
+                httpClient.ApiBaseUrlOverride <- Some url
             | false, _ -> ()
         | false, _ -> ()
 
