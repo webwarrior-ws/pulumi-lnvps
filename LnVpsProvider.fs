@@ -201,6 +201,8 @@ type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
                 match self.ApiBaseUrlOverride with
                 | Some url -> url
                 | None -> defaultApiBaseUrl
+            do! host.LogAsync(LogRequest(LogSeverity.Info, $"Using baseUrl = {baseUrl}")) |> Async.AwaitTask
+
             let absoluteUrl = baseUrl + relativeUrl
             let event = NostrEvent(
                 Kind = NostrKind.HttpAuth,
