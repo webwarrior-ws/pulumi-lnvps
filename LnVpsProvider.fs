@@ -141,13 +141,14 @@ type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
     static let sshKeyResourceName = "lnvps:index:SshKey"
     static let vmResourceName = "lnvps:index:VM"
     static let customVmResourceName = "lnvps:index:CustomVM"
-    static let apiBaseUrl = "https://api.lnvps.net"
+    static let defaultApiBaseUrl = "https://api.lnvps.net"
 
     let httpClient = new CustomHttpClient(7, host)
 
     let email = Environment.GetEnvironmentVariable LnVpsProvider.EmailEnvVarName
 
     member val SendMessageScriptPath: Option<FileInfo> = None with get, set
+    member val ApiBaseUrlOverride: Option<string> = None with get, set
 
     // Provider has to advertise its version when outputting schema, e.g. for SDK generation.
     // In pulumi-lnvps, we have Pulumi generate the terraform bridge, and it automatically pulls version from the tag.
@@ -196,7 +197,13 @@ type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
     // maybeContent is Option<obj> because the 'obj' is an anonymous record, which has different structure each time
     member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, maybeContent: Option<obj>, ?ct: CancellationToken) =
         async {
-            let absoluteUrl = apiBaseUrl + relativeUrl
+            let baseUrl =
+                match self.ApiBaseUrlOverride with
+                | Some url -> url
+                | None -> defaultApiBaseUrl
+            do! host.LogAsync(LogRequest(LogSeverity.Info, $"Using baseUrl = {baseUrl}")) |> Async.AwaitTask
+
+            let absoluteUrl = baseUrl + relativeUrl
             let event = NostrEvent(
                 Kind = NostrKind.HttpAuth,
                 CreatedAt = DateTime.UtcNow,
@@ -765,6 +772,9 @@ Invoice for renewal {invoiceInfo}:"
                         "inputProperties": {
                             "sendMessageScriptPath": {
                                 "type": "string"
+                            },
+                            "apiBaseUrl": {
+                                "type": "string"
                             }
                         },
                         "requiredInputs": [ "sendMessageScriptPath" ]
@@ -804,6 +814,14 @@ Invoice for renewal {invoiceInfo}:"
                 if not <| File.Exists path then
                     failwithf "Script file %s does not exist" path
                 self.SendMessageScriptPath <- Some <| FileInfo path
+            | false, _ -> ()
+        | false, _ -> ()
+
+        match request.Args.TryGetValue "apiBaseUrl" with
+        | true, value ->
+            match value.TryGetString() with
+            | true, url ->
+                self.ApiBaseUrlOverride <- Some url
             | false, _ -> ()
         | false, _ -> ()
 

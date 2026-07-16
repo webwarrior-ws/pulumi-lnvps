@@ -39,6 +39,9 @@ namespace Pulumi.Lnvps
 
     public sealed class ProviderArgs : global::Pulumi.ResourceArgs
     {
+        [Input("apiBaseUrl")]
+        public Input<string>? ApiBaseUrl { get; set; }
+
         [Input("sendMessageScriptPath", required: true)]
         public Input<string> SendMessageScriptPath { get; set; } = null!;
 
