@@ -6,6 +6,7 @@ let DefaultApiBaseUrl = "https://api.lnvps.net"
 let Images =
     [
         "Ubuntu2404", 1
+        "Ubuntu2604", 15
     ]
 
 /// IDs of templates.
