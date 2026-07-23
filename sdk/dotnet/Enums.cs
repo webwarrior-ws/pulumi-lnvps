@@ -68,6 +68,7 @@ namespace Pulumi.Lnvps
     public enum ImageId
     {
         Ubuntu2404 = 1,
+        Ubuntu2604 = 15,
     }
 
     public enum RegionId
