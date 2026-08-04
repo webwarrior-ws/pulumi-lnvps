@@ -89,7 +89,7 @@ type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
 
     member _.DefaultRequestHeaders = httpClient.DefaultRequestHeaders
 
-    member self.SendAsync(requestFactory: string -> CustomHttpReqMsg, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
+    member self.SendAsync(requestFactory: string -> Async<CustomHttpReqMsg>, ?cancellationToken: CancellationToken) : Async<HttpResponseMessage> =
         let rec sendWithRetry (token: CancellationToken) (currentAttempt: int) : Async<HttpResponseMessage> =
             async {
                 let beforeReqTime = DateTime.Now
@@ -100,7 +100,7 @@ type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
                     | _ -> Constants.DefaultApiBaseUrl
                 do! host.LogAsync(LogRequest(LogSeverity.Info, $"Using baseUrl = {baseUrl}")) |> Async.AwaitTask
 
-                use request = requestFactory baseUrl
+                use! request = requestFactory baseUrl
 
                 let retry (ex: Exception) = async {
                     if currentAttempt <= retryCount then
@@ -155,6 +155,8 @@ type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
 
     let email = Environment.GetEnvironmentVariable LnVpsProvider.EmailEnvVarName
 
+    let usedEventIds = Collections.Concurrent.ConcurrentDictionary<string, unit>()
+
     member val SendMessageScriptPath: Option<FileInfo> = None with get, set
 
     // Provider has to advertise its version when outputting schema, e.g. for SDK generation.
@@ -204,22 +206,37 @@ type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
     // maybeContent is Option<obj> because the 'obj' is an anonymous record, which has different structure each time
     member self.AsyncSendRequest(relativeUrl: string, method: HttpMethod, maybeContent: Option<obj>, ?ct: CancellationToken) =
         async {
-            let requestMessageFactory baseUrl = 
+            let requestMessageFactory baseUrl = async {
                 let absoluteUrl = baseUrl + relativeUrl
-                let event = NostrEvent(
-                    Kind = NostrKind.HttpAuth,
-                    CreatedAt = DateTime.UtcNow,
-                    Content = String.Empty,
-                    Tags = NostrEventTags(NostrEventTag("u", absoluteUrl), NostrEventTag("method", method.Method))
-                )
+                
+                let rec createEvent() = async {
+                    let event =
+                        NostrEvent(
+                            Kind = NostrKind.HttpAuth,
+                            CreatedAt = DateTime.UtcNow,
+                            Content = String.Empty,
+                            Tags = NostrEventTags(NostrEventTag("u", absoluteUrl), NostrEventTag("method", method.Method))
+                        )
+                    // Request with the same Id can't be reused, see https://github.com/LNVPS/api/blob/master/API_DOCUMENTATION.md#nip-98-requirements
+                    // In case request with the same Id was already created, try again with new timestamp.
+                    let minimalAmountOfTimeToChangeTimestamp = TimeSpan.FromSeconds 1.0
+                    if usedEventIds.ContainsKey (event.ComputeId()) then
+                        do! Async.Sleep minimalAmountOfTimeToChangeTimestamp
+                        return! createEvent()
+                    else
+                        usedEventIds.TryAdd(event.ComputeId(), ()) |> ignore
+                        return event
+                }
 
+                let! event = createEvent()
                 let key = NostrPrivateKey.FromHex nostrPrivateKey
                 let signedEvent = event.Sign key
                 let serializedEvent = Nostr.Client.Json.NostrJson.Serialize signedEvent 
                 let base64EncodedEvent = Convert.ToBase64String(Text.Encoding.UTF8.GetBytes serializedEvent)
                 httpClient.DefaultRequestHeaders.Authorization <- Headers.AuthenticationHeaderValue("Nostr", base64EncodedEvent)
 
-                new CustomHttpReqMsg(method, absoluteUrl, maybeContent)
+                return new CustomHttpReqMsg(method, absoluteUrl, maybeContent)
+            }
             
             let! response =
                 match ct with
