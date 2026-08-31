@@ -31,6 +31,18 @@ Response: {responseBody}")
     member self.StatusCode = statusCode
     member self.ResponseBody = responseBody
 
+    static member AsyncFromResponse (response: HttpResponseMessage) =
+        async {
+            let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+            let contentString =
+                match Option.ofObj response.RequestMessage.Content with
+                | Some contentObj ->
+                    let jsonContent = JsonContent.Create contentObj
+                    $"(content = {jsonContent.Value})"
+                | None -> String.Empty
+            return (RequestFailed(response.RequestMessage.Method, response.RequestMessage.RequestUri.OriginalString, contentString, response.StatusCode, responseBody))
+        }
+
 type EmailVerificationRequired(message) =
     inherit Exception(message)
 
@@ -69,6 +81,13 @@ type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
     // Disable HttpClient's built-in timeout so that Pulumi's CustomResourceOptions timeout
     // (passed via CancellationToken) is the only one that controls cancellation.
     do httpClient.Timeout <- Threading.Timeout.InfiniteTimeSpan
+
+    static let retryableErrorCodes = 
+        [ 
+            int HttpStatusCode.InternalServerError
+            // Clouflare-specific "A Timeout Occurred" error, see https://github.com/LNVPS/api/issues/395
+            524 
+        ]
 
     static let IsConnectionTimedOutException (ex: Exception) =
         let rec checkException (e: Exception) =
@@ -127,7 +146,11 @@ type CustomHttpClient(retryCount: int, host: Pulumi.Experimental.IEngine) =
 
                 try
                     let! response = httpClient.SendAsync(request.Value, token) |> Async.AwaitTask
-                    return response
+                    if List.contains (int response.StatusCode) retryableErrorCodes then
+                        let! requestFailedException = RequestFailed.AsyncFromResponse response
+                        return! retry requestFailedException
+                    else
+                        return response
                 with
                 | ex ->
                     match Fsdk.FSharpUtil.FindException<HttpRequestException> ex with
@@ -245,14 +268,8 @@ type LnVpsProvider(nostrPrivateKey: string, host: Pulumi.Experimental.IEngine) =
             if response.IsSuccessStatusCode then
                 return response
             else
-                let! responseBody = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                let contentString =
-                    match maybeContent with
-                    | Some contentObj ->
-                        let jsonContent = JsonContent.Create contentObj
-                        $"(content = {jsonContent.Value})"
-                    | None -> String.Empty
-                return raise <| RequestFailed(method, relativeUrl, contentString, response.StatusCode, responseBody)
+                let! requestFailedException = RequestFailed.AsyncFromResponse response
+                return raise requestFailedException
         }
     
     member self.AsyncGetInvoice (vmId: uint64) = 
