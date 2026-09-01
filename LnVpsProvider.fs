@@ -408,16 +408,32 @@ Invoice for renewal {invoiceInfo}:"
             let requestSshKeyId = self.GetPropertyString(requestProperties, "ssh_key_id", __LINE__)
             let imageId = self.GetPropertyNumber(requestProperties, "image_id", __LINE__)
 
-            if vmSshKeyId <> requestSshKeyId then
+            let updateSshKey() =
                 let vmPatchRequestBody = {| ssh_key_id = uint64 requestSshKeyId |}
-                do! 
-                    self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Patch, Some vmPatchRequestBody)
-                    |> Async.Ignore
+                self.AsyncSendRequest($"/api/v1/vm/{vmId}", HttpMethod.Patch, Some vmPatchRequestBody)
+                |> Async.Ignore
 
-            let reinstallRequestBody = {| image_id = imageId |}
-            do!
+            let reInstall() =
+                let reinstallRequestBody = {| image_id = imageId |}
                 self.AsyncSendRequest($"/api/v1/vm/{vmId}/re-install", HttpMethod.Patch, Some reinstallRequestBody)
                 |> Async.Ignore
+
+            if vmSshKeyId <> requestSshKeyId then
+                try
+                    do! updateSshKey()
+                with
+                | :? RequestFailed as requestFailed ->
+                    if (int requestFailed.StatusCode) / 100 = 5 then
+                        let logMessage = $"Updating SSH key request failed with {requestFailed.StatusCode}. Issuing re-install and retrying."
+                        do!
+                            host.LogAsync(LogRequest(LogSeverity.Warning, logMessage))
+                            |> Async.AwaitTask
+                        do! reInstall()
+                        do! updateSshKey()
+                    else
+                        return raise requestFailed
+
+            do! reInstall()
             do! self.AsyncWaitForVMToBeRunning (TimeSpan.FromMinutes 5.0) (TimeSpan.FromSeconds 5.0) vmId
             
             let! currentVmStatus = self.AsyncGetVMStatus vmId
